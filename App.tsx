@@ -77,10 +77,11 @@ const App: React.FC = () => {
 
   // Sincronizar dados com o MySQL
   const saveSchoolData = useCallback(async (key: string, data: any) => {
-      if (currentUser?.schoolId) {
+      if (currentUser?.schoolId || currentUser?.role === UserRole.SUPER_ADMIN) {
           setIsSyncing(true);
           try {
-              await apiService.post(`/school/${currentUser.schoolId}/sync/${key}`, data);
+              const sid = currentUser.schoolId || 'SYSTEM';
+              await apiService.post(`/school/${sid}/sync/${key}`, data);
           } catch (err) {
               console.error(`Erro ao sincronizar ${key}:`, err);
           } finally {
@@ -88,6 +89,24 @@ const App: React.FC = () => {
           }
       }
   }, [currentUser]);
+
+  // Função para o usuário atualizar o próprio perfil (ex: trocar foto)
+  const handleUpdateCurrentUser = useCallback((updatedData: Partial<User>) => {
+    if (!currentUser) return;
+    
+    const newCurrentUser = { ...currentUser, ...updatedData };
+    setCurrentUser(newCurrentUser);
+
+    // Se não for SuperAdmin, atualiza também na lista de usuários da escola para sincronizar
+    if (currentUser.role !== UserRole.SUPER_ADMIN) {
+        const updatedUsers = users.map(u => u.id === currentUser.id ? newCurrentUser : u);
+        setUsers(updatedUsers);
+        saveSchoolData('users', updatedUsers);
+    } else {
+        // Se for SuperAdmin, salva no sistema global
+        saveSchoolData('users', [newCurrentUser]);
+    }
+  }, [currentUser, users, saveSchoolData]);
 
   const handleSchoolsChange = async (updated: SchoolInstance[]) => {
       setSchools(updated);
@@ -157,11 +176,18 @@ const App: React.FC = () => {
       {!currentUser ? (
         <LoginPage onLogin={handleLogin} loginError={loginError} />
       ) : currentUser.role === UserRole.SUPER_ADMIN ? (
-        <SuperAdminDashboard schools={schools} onSchoolsChange={handleSchoolsChange} onLogout={() => setCurrentUser(null)} currentUser={currentUser} />
+        <SuperAdminDashboard 
+            schools={schools} 
+            onSchoolsChange={handleSchoolsChange} 
+            onLogout={() => setCurrentUser(null)} 
+            currentUser={currentUser}
+            onUpdateCurrentUser={handleUpdateCurrentUser}
+        />
       ) : (
         <Dashboard 
             user={currentUser} 
             onLogout={() => setCurrentUser(null)}
+            onUpdateCurrentUser={handleUpdateCurrentUser}
             users={users}
             onUsersChange={(u: User[]) => { setUsers(u); saveSchoolData('users', u); }}
             students={students}

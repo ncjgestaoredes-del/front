@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { SchoolInstance, SchoolStatus, User, UserRole, PaymentMethod, PasswordResetRequest } from '../types';
 import { UsersIcon, CurrencyDollarIcon, CloseIcon, CheckCircleIcon, ExclamationTriangleIcon, SearchIcon, LogoutIcon, LockClosedIcon, LockOpenIcon, PrinterIcon, InboxIcon, ClockIcon, EditIcon, TrashIcon } from './icons/IconComponents';
 import { apiService } from '../apiService';
@@ -8,15 +8,17 @@ interface SuperAdminDashboardProps {
     schools: SchoolInstance[];
     onSchoolsChange: (schools: SchoolInstance[]) => void;
     onLogout: () => void;
+    onUpdateCurrentUser: (data: Partial<User>) => void;
     currentUser: User;
 }
 
-const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ schools, onSchoolsChange, onLogout, currentUser }) => {
+const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ schools, onSchoolsChange, onLogout, onUpdateCurrentUser, currentUser }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingSchool, setEditingSchool] = useState<SchoolInstance | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     
     // Password Reset Requests
     const [resetRequests, setResetRequests] = useState<PasswordResetRequest[]>([]);
@@ -85,6 +87,18 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ schools, onSc
         setNewContact(''); 
         setNewPass('');
         setEditingSchool(null);
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = reader.result as string;
+                onUpdateCurrentUser({ avatarUrl: base64String });
+            };
+            reader.readAsDataURL(file);
+        }
     };
 
     const handleAddSchool = async (e: React.FormEvent) => {
@@ -249,9 +263,18 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ schools, onSc
                     <h1 className="text-xl font-black tracking-tight">SaaS CONTROL CENTER</h1>
                 </div>
                 <div className="flex items-center gap-6">
-                    <div className="text-right">
-                        <p className="text-sm font-bold">{currentUser.name}</p>
-                        <p className="text-[10px] text-indigo-400 uppercase font-black">Super Admin Global</p>
+                    <div className="flex items-center gap-3">
+                        <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                            <img className="h-10 w-10 rounded-full object-cover border-2 border-indigo-400 group-hover:opacity-75 transition-opacity" src={currentUser.avatarUrl} alt="" />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <EditIcon className="w-4 h-4 text-white" />
+                            </div>
+                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                        </div>
+                        <div className="text-right hidden sm:block">
+                            <p className="text-sm font-bold">{currentUser.name}</p>
+                            <p className="text-[10px] text-indigo-400 uppercase font-black">Super Admin Global</p>
+                        </div>
                     </div>
                     <button onClick={onLogout} className="bg-white/10 p-2 rounded-full hover:bg-red-500 transition-colors">
                         <LogoutIcon className="w-5 h-5" />

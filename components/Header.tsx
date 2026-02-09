@@ -1,22 +1,24 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { User, AppNotification } from '../types';
-import { LogoutIcon, BellIcon } from './icons/IconComponents';
+import { LogoutIcon, BellIcon, EditIcon } from './icons/IconComponents';
 
 interface HeaderProps {
   user: User;
   onLogout: () => void;
+  onUpdateProfile?: (data: Partial<User>) => void;
   title: string;
   notifications?: AppNotification[];
   onMarkNotificationAsRead?: (id: string) => void;
   onToggleSidebar?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ user, onLogout, title, notifications = [], onMarkNotificationAsRead, onToggleSidebar }) => {
+const Header: React.FC<HeaderProps> = ({ user, onLogout, onUpdateProfile, title, notifications = [], onMarkNotificationAsRead, onToggleSidebar }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -41,6 +43,19 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, title, notifications = 
       if (onMarkNotificationAsRead && !notification.read) {
           onMarkNotificationAsRead(notification.id);
       }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUpdateProfile) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64String = reader.result as string;
+            onUpdateProfile({ avatarUrl: base64String });
+            setDropdownOpen(false);
+        };
+        reader.readAsDataURL(file);
+    }
   };
 
   return (
@@ -120,18 +135,43 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, title, notifications = 
           </button>
 
           {dropdownOpen && (
-            <div className="absolute right-0 mt-2 py-2 w-48 bg-white rounded-lg shadow-2xl z-20 border border-gray-100">
-              <div className="px-4 py-2 border-b border-gray-50 lg:hidden">
-                 <p className="text-sm font-bold text-gray-800">{user.name}</p>
-                 <p className="text-[10px] text-indigo-500 font-bold uppercase">{user.role}</p>
+            <div className="absolute right-0 mt-2 py-2 w-56 bg-white rounded-lg shadow-2xl z-20 border border-gray-100 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-3">
+                 <img className="h-10 w-10 rounded-full object-cover" src={user.avatarUrl} alt="" />
+                 <div>
+                    <p className="text-sm font-bold text-gray-800">{user.name}</p>
+                    <p className="text-[10px] text-indigo-500 font-bold uppercase">{user.role}</p>
+                 </div>
               </div>
-              <button
-                onClick={onLogout}
-                className="w-full text-left flex items-center px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors font-bold"
-              >
-                <LogoutIcon className="w-5 h-5 mr-2" />
-                Sair do Sistema
-              </button>
+              
+              <div className="py-1">
+                {onUpdateProfile && (
+                    <>
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 transition-colors font-medium"
+                        >
+                            <EditIcon className="w-4 h-4 mr-3 text-indigo-500" />
+                            Alterar Foto de Perfil
+                        </button>
+                        <input 
+                            type="file" 
+                            ref={fileInputRef} 
+                            onChange={handleFileChange} 
+                            accept="image/*" 
+                            className="hidden" 
+                        />
+                    </>
+                )}
+                
+                <button
+                    onClick={onLogout}
+                    className="w-full text-left flex items-center px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors font-bold"
+                >
+                    <LogoutIcon className="w-5 h-5 mr-3" />
+                    Sair do Sistema
+                </button>
+              </div>
             </div>
           )}
         </div>

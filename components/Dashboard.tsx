@@ -28,6 +28,7 @@ import { ClipboardListIcon, CurrencyDollarIcon, CalendarIcon, TrendingDownIcon }
 interface DashboardProps {
   user: User;
   onLogout: () => void;
+  onUpdateCurrentUser: (data: Partial<User>) => void;
   users: User[];
   onUsersChange: (users: User[]) => void;
   students: Student[];
@@ -74,7 +75,7 @@ const viewTitles: Record<View, string> = {
 };
 
 const Dashboard: React.FC<DashboardProps> = (props) => {
-  const { user, onLogout, users, onUsersChange, students, onStudentsChange, onResetApp, onClearStudents, academicYears, onAcademicYearsChange, schoolSettings, onSchoolSettingsChange, financialSettings, onFinancialSettingsChange, turmas, onTurmasChange, expenses, onExpensesChange, topics, onTopicsChange, messages, onMessagesChange, notifications, onAddNotifications, onMarkNotificationAsRead, requests, onRequestsChange } = props;
+  const { user, onLogout, onUpdateCurrentUser, users, onUsersChange, students, onStudentsChange, onResetApp, onClearStudents, academicYears, onAcademicYearsChange, schoolSettings, onSchoolSettingsChange, financialSettings, onFinancialSettingsChange, turmas, onTurmasChange, expenses, onExpensesChange, topics, onTopicsChange, messages, onMessagesChange, notifications, onAddNotifications, onMarkNotificationAsRead, requests, onRequestsChange } = props;
   
   const [activeView, setActiveView] = useState<View>('painel');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -113,6 +114,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
                     <Header 
                         user={user} 
                         onLogout={onLogout} 
+                        onUpdateProfile={onUpdateCurrentUser}
                         title={viewTitles[activeView]} 
                         notifications={notifications} 
                         onMarkNotificationAsRead={onMarkNotificationAsRead}
@@ -137,6 +139,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
     return <GuardianPortal 
               user={user} 
               onLogout={onLogout} 
+              onUpdateCurrentUser={onUpdateCurrentUser}
               students={students}
               onStudentsChange={onStudentsChange}
               academicYears={academicYears}
@@ -284,6 +287,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
         <Header 
             user={user} 
             onLogout={onLogout} 
+            onUpdateProfile={onUpdateCurrentUser}
             title={viewTitles[activeView]} 
             notifications={notifications}
             onMarkNotificationAsRead={onMarkNotificationAsRead}
