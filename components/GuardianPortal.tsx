@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Student, AcademicYear, SchoolSettings, BehaviorEvaluation, Turma, FinancialSettings, PaymentRecord, PaymentMethod, AppNotification, UserRole, PaymentType } from '../types';
-import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, PrinterIcon, DevicePhoneMobileIcon, SignalIcon } from './icons/IconComponents';
+import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, PrinterIcon, DevicePhoneMobileIcon, SignalIcon, ChartBarIcon } from './icons/IconComponents';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { View } from './Dashboard';
