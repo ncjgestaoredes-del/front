@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Turma, Student, AcademicYear, SchoolSettings, Shift, User, UserRole, Subject, TeacherAssignment, TeacherAvailability } from '../types';
 import { CloseIcon, UsersIcon, GraduationCapIcon, ChevronDownIcon } from './icons/IconComponents';
@@ -336,7 +335,7 @@ const CreateTurmaModal: React.FC<CreateTurmaModalProps> = (props) => {
                                 ) : availableSubjects.length === 0 ? (
                                      <div className="border rounded-lg p-4 bg-yellow-50 border-yellow-200 text-center text-sm text-yellow-800">
                                         Não há disciplinas cadastradas para {classLevel} em {academicYear}. <br/>
-                                        <span className="text-xs">Vá em Configurações > Gestão de Anos Letivos.</span>
+                                        <span className="text-xs">Vá em Configurações &gt; Gestão de Anos Letivos.</span>
                                      </div>
                                 ) : (
                                     <div className="border rounded-lg flex-1 overflow-y-auto p-2 bg-white">
@@ -418,7 +417,7 @@ const CreateTurmaModal: React.FC<CreateTurmaModalProps> = (props) => {
                                                             )}
                                                         </div>
                                                     </li>
-                                                )})}
+                                                );})}
                                             </ul>
                                         ) : (
                                             <p className="text-center text-sm text-gray-500 py-4">
