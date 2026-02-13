@@ -75,17 +75,19 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
-  // Sincronizar dados com o MySQL
+  // Sincronizar dados com o MySQL (Arquivamento Central)
   const saveSchoolData = useCallback(async (key: string, data: any) => {
       if (currentUser?.schoolId || currentUser?.role === UserRole.SUPER_ADMIN) {
           setIsSyncing(true);
           try {
               const sid = currentUser.schoolId || 'SYSTEM';
+              // Enviamos para a API que grava no MySQL
               await apiService.post(`/school/${sid}/sync/${key}`, data);
           } catch (err) {
-              console.error(`Erro ao sincronizar ${key}:`, err);
+              console.error(`Erro ao arquivar ${key} no banco de dados:`, err);
           } finally {
-              setTimeout(() => setIsSyncing(false), 1000);
+              // Simula um delay visual para o usuário ver o estado de "Sincronizando"
+              setTimeout(() => setIsSyncing(false), 800);
           }
       }
   }, [currentUser]);
@@ -146,7 +148,7 @@ const App: React.FC = () => {
       return (
           <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white">
               <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p className="font-black tracking-[0.2em] uppercase text-sm">Sincronizando Banco de Dados...</p>
+              <p className="font-black tracking-[0.2em] uppercase text-sm">Acedendo ao Arquivo Central...</p>
           </div>
       );
   }
@@ -157,9 +159,9 @@ const App: React.FC = () => {
               <div className="bg-red-500/20 p-6 rounded-full mb-6">
                   <svg className="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
               </div>
-              <h2 className="text-2xl font-black mb-2 uppercase">Erro de Conexão Crítico</h2>
+              <h2 className="text-2xl font-black mb-2 uppercase">Erro de Conexão com o Banco de Dados</h2>
               <p className="text-slate-400 max-w-md mb-8">{dbError}</p>
-              <button onClick={() => window.location.reload()} className="bg-indigo-600 px-8 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all">TENTAR NOVAMENTE</button>
+              <button onClick={() => window.location.reload()} className="bg-indigo-600 px-8 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all">RECONECTAR</button>
           </div>
       );
   }
@@ -167,9 +169,9 @@ const App: React.FC = () => {
   return (
     <>
       {isSyncing && (
-          <div className="fixed bottom-4 right-4 z-[9999] bg-indigo-600 text-white px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 animate-bounce">
-              <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>
-              <span className="text-[10px] font-black uppercase tracking-widest">Salvando no Banco de Dados...</span>
+          <div className="fixed bottom-6 right-6 z-[9999] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-indigo-500/30 animate-pulse">
+              <div className="w-3 h-3 bg-indigo-500 rounded-full animate-ping"></div>
+              <span className="text-xs font-black uppercase tracking-widest">Arquivando no Banco de Dados...</span>
           </div>
       )}
 
@@ -193,7 +195,7 @@ const App: React.FC = () => {
             students={students}
             onStudentsChange={(s: Student[]) => { setStudents(s); saveSchoolData('students', s); }}
             onResetApp={() => alert("Função desativada em modo MySQL. Use o DB Admin.")}
-            onClearStudents={() => { if(window.confirm("Limpar?")) { setStudents([]); saveSchoolData('students', []); } }}
+            onClearStudents={() => { if(window.confirm("Limpar todos os alunos? Isso será arquivado permanentemente.")) { setStudents([]); saveSchoolData('students', []); } }}
             academicYears={academicYears}
             onAcademicYearsChange={(y: AcademicYear[]) => { setAcademicYears(y); saveSchoolData('academic_years', y); }}
             schoolSettings={schoolSettings}

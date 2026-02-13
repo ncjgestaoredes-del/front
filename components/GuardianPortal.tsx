@@ -1,10 +1,10 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Student, AcademicYear, SchoolSettings, BehaviorEvaluation, Turma, FinancialSettings, PaymentRecord, PaymentMethod, AppNotification, UserRole, PaymentType } from '../types';
-import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, PrinterIcon, DevicePhoneMobileIcon, SignalIcon, ChartBarIcon } from './icons/IconComponents';
+import { User, Student, AcademicYear, SchoolSettings, Turma, FinancialSettings, AppNotification, UserRole, Grade, AttendanceRecord, Subject, PaymentRecord } from '../types';
+import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, ClockIcon, ChartBarIcon, BookOpenIcon, PrinterIcon } from './icons/IconComponents';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { View } from './Dashboard';
-import { printReceipt } from './ReceiptUtils';
 
 interface GuardianPortalProps {
   user: User;
@@ -22,441 +22,583 @@ interface GuardianPortalProps {
   users?: User[];
 }
 
-const GuardianHeader: React.FC<{ user: User; onLogout: () => void; onUpdateProfile: (data: Partial<User>) => void }> = ({ user, onLogout, onUpdateProfile }) => (
-    <Header user={user} onLogout={onLogout} onUpdateProfile={onUpdateProfile} title="Portal do Encarregado" />
-);
-
-// Added AttendanceHistoryModal to fix missing component error
-const AttendanceHistoryModal: React.FC<{ isOpen: boolean; onClose: () => void; student: Student; selectedYear: number | null }> = ({ isOpen, onClose, student, selectedYear }) => {
-    const records = useMemo(() => {
-        if (!selectedYear) return [];
-        return (student.attendance || []).filter(a => new Date(a.date).getFullYear() === selectedYear).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [student.attendance, selectedYear]);
-
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
-                <div className="p-4 border-b flex justify-between items-center">
-                    <h3 className="font-bold text-lg">Histórico de Presenças - {selectedYear}</h3>
-                    <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full"><CloseIcon className="w-6 h-6" /></button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4">
-                    {records.length > 0 ? (
-                        <table className="w-full text-sm">
-                            <thead><tr className="text-left border-b">
-                                <th className="pb-2">Data</th>
-                                <th className="pb-2">Status</th>
-                            </tr></thead>
-                            <tbody>
-                                {records.map((r, i) => (
-                                    <tr key={i} className="border-b last:border-0">
-                                        <td className="py-2">{new Date(r.date).toLocaleDateString()}</td>
-                                        <td className="py-2">
-                                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${r.status === 'Presente' ? 'bg-green-100 text-green-700' : r.status === 'Ausente' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                {r.status}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    ) : <p className="text-center text-gray-500 py-8">Nenhum registo para este ano.</p>}
-                </div>
-            </div>
-        </div>
-    );
+// FUNÇÃO DE EXTRAÇÃO DE ANO ULTRA ROBUSTA
+const safeExtractYear = (dateInput: any): number => {
+    if (!dateInput) return 0;
+    
+    // Se já for uma string (formato ISO ou brasileiro)
+    const str = String(dateInput);
+    const match = str.match(/\d{4}/);
+    if (match) return parseInt(match[0], 10);
+    
+    // Tenta via objeto Date
+    const d = new Date(dateInput);
+    if (!isNaN(d.getFullYear())) return d.getFullYear();
+    
+    return 0;
 };
 
-// Added FinancialHistoryModal to fix missing component error
-const FinancialHistoryModal: React.FC<{ isOpen: boolean; onClose: () => void; student: Student; selectedYear: number | null; financialSettings: FinancialSettings; schoolSettings: SchoolSettings }> = ({ isOpen, onClose, student, selectedYear, financialSettings, schoolSettings }) => {
-    const payments = useMemo(() => {
-        if (!selectedYear) return [];
-        return (student.payments || []).filter(p => p.academicYear === selectedYear).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [student.payments, selectedYear]);
-
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-                <div className="p-4 border-b flex justify-between items-center">
-                    <h3 className="font-bold text-lg">Histórico de Pagamentos - {selectedYear}</h3>
-                    <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full"><CloseIcon className="w-6 h-6" /></button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4">
-                    {payments.length > 0 ? (
-                        <table className="w-full text-sm">
-                            <thead><tr className="text-left border-b">
-                                <th className="pb-2">Data</th>
-                                <th className="pb-2">Tipo</th>
-                                <th className="pb-2 text-right">Valor</th>
-                                <th className="pb-2 text-center">Ações</th>
-                            </tr></thead>
-                            <tbody>
-                                {payments.map((p, i) => (
-                                    <tr key={i} className="border-b last:border-0">
-                                        <td className="py-2">{new Date(p.date).toLocaleDateString()}</td>
-                                        <td className="py-2">{p.type}</td>
-                                        <td className="py-2 text-right font-bold">{p.amount.toLocaleString()} MT</td>
-                                        <td className="py-2 text-center">
-                                            <button onClick={() => printReceipt(p, student, schoolSettings, financialSettings.currency)} className="text-indigo-600 hover:text-indigo-800"><PrinterIcon className="w-4 h-4" /></button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    ) : <p className="text-center text-gray-500 py-8">Nenhum pagamento para este ano.</p>}
-                </div>
-            </div>
-        </div>
-    );
+// GARANTE QUE O DADO É UM ARRAY
+const ensureArray = (data: any): any[] => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    try {
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
 };
 
-// Added MobilePaymentModal to fix missing component error
-const MobilePaymentModal: React.FC<{ isOpen: boolean; onClose: () => void; student: Student; financialSettings: FinancialSettings; onPaymentSuccess: (amount: number, method: string, description: string, referenceMonth?: number) => void; pendingAmount: number; selectedYear: number; academicYears: AcademicYear[] }> = ({ isOpen, onClose, student, financialSettings, onPaymentSuccess, pendingAmount, selectedYear, academicYears }) => {
-    const [amount, setAmount] = useState(pendingAmount.toString());
-    const [method, setMethod] = useState<'MPesa' | 'e-Mola' | 'mKesh'>('MPesa');
-    const [phone, setPhone] = useState('');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [step, setStep] = useState<'form' | 'confirm'>('form');
+const StatementModal: React.FC<{ 
+    isOpen: boolean; 
+    onClose: () => void; 
+    student: Student | null; 
+    year: number; 
+    financialSettings: FinancialSettings;
+}> = ({ isOpen, onClose, student, year, financialSettings }) => {
+    if (!isOpen || !student) return null;
 
-    const handlePay = () => {
-        if (!phone || !amount || Number(amount) <= 0) return;
-        setIsProcessing(true);
-        // Simulate USSD push
-        setTimeout(() => {
-            setIsProcessing(false);
-            onPaymentSuccess(Number(amount), method, `Pagamento Mobile via ${method}`, new Date().getMonth() + 1);
-            onClose();
-        }, 2000);
+    const formatCurrency = (val: number) => {
+        return val.toLocaleString('pt-MZ', { style: 'currency', currency: financialSettings.currency || 'MZN' });
     };
 
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
-                <div className={`p-6 text-white flex justify-between items-center ${method === 'MPesa' ? 'bg-red-600' : method === 'e-Mola' ? 'bg-orange-500' : 'bg-yellow-500'}`}>
-                    <h3 className="font-black uppercase tracking-tight flex items-center"><DevicePhoneMobileIcon className="w-5 h-5 mr-2" /> Pagar via {method}</h3>
-                    <button onClick={onClose}><CloseIcon className="w-6 h-6" /></button>
-                </div>
-                <div className="p-8 space-y-6">
-                    {step === 'form' ? (
-                        <>
-                            <div className="grid grid-cols-3 gap-2">
-                                <button onClick={() => setMethod('MPesa')} className={`p-2 rounded-xl border-2 transition-all ${method === 'MPesa' ? 'border-red-600 bg-red-50 text-red-600' : 'border-gray-100 text-gray-400'}`}>M-Pesa</button>
-                                <button onClick={() => setMethod('e-Mola')} className={`p-2 rounded-xl border-2 transition-all ${method === 'e-Mola' ? 'border-orange-500 bg-orange-50 text-orange-500' : 'border-gray-100 text-gray-400'}`}>e-Mola</button>
-                                <button onClick={() => setMethod('mKesh')} className={`p-2 rounded-xl border-2 transition-all ${method === 'mKesh' ? 'border-yellow-500 bg-yellow-50 text-yellow-600' : 'border-gray-100 text-gray-400'}`}>mKesh</button>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Valor a Pagar</label>
-                                <input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-full p-4 bg-gray-50 rounded-2xl text-2xl font-black text-center" />
-                                <p className="text-[10px] text-gray-500 mt-2">Dívida estimada: {pendingAmount} MT</p>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Telefone da Conta</label>
-                                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="84/85/86/87..." className="w-full p-4 bg-gray-50 rounded-2xl text-xl font-bold text-center" />
-                            </div>
-                            <button onClick={() => setStep('confirm')} disabled={!phone || !amount} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-indigo-100">Próximo</button>
-                        </>
-                    ) : (
-                        <div className="text-center space-y-6">
-                            <div className="bg-blue-50 p-6 rounded-2xl">
-                                <p className="text-sm text-blue-600">Verifique o seu telemóvel e introduza o seu PIN para autorizar a transação de <strong>{amount} MT</strong>.</p>
-                            </div>
-                            <button onClick={handlePay} disabled={isProcessing} className="w-full bg-green-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center">
-                                {isProcessing ? <><SignalIcon className="w-6 h-6 animate-ping mr-3" /> PROCESSANDO...</> : 'JÁ AUTORIZEI'}
-                            </button>
-                            <button onClick={() => setStep('form')} disabled={isProcessing} className="text-gray-400 font-bold text-xs uppercase tracking-widest">Voltar</button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// Added StudentInfoCard to fix missing component error
-const StudentInfoCard: React.FC<{ student: Student; selectedYear: number | null; academicYears: AcademicYear[]; schoolSettings: SchoolSettings; turmas: Turma[]; financialSettings: FinancialSettings; onOpenPaymentModal: (student: Student, debt: number) => void }> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenPaymentModal }) => {
-    const [isFinModalOpen, setIsFinModalOpen] = useState(false);
-    const [isAttModalOpen, setIsAttModalOpen] = useState(false);
-
-    const activeTurma = useMemo(() => {
-        if (!selectedYear) return null;
-        return turmas.find(t => t.academicYear === selectedYear && t.studentIds.includes(student.id));
-    }, [turmas, selectedYear, student.id]);
-
-    const financialStatus = useMemo(() => {
-        if (!selectedYear) return { paid: 0, debt: 0, isLate: false };
+    const ledger = useMemo(() => {
+        const items: { date: string; desc: string; debit: number; credit: number }[] = [];
+        const startMonth = 2;
+        const now = new Date();
+        const currentMonth = year === now.getFullYear() ? now.getMonth() + 1 : 11;
         
-        const yearPayments = (student.payments || []).filter(p => p.academicYear === selectedYear);
-        const totalPaid = yearPayments.reduce((acc, curr) => acc + curr.amount, 0);
-
         let monthlyFee = financialSettings.monthlyFee;
         if (student.desiredClass) {
             const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
             if (specific) monthlyFee = specific.monthlyFee;
         }
 
-        const now = new Date();
-        const startMonth = 2; // Feb
-        const currentMonth = now.getMonth() + 1;
-        const monthsDue = Math.max(0, currentMonth - startMonth + 1);
-        const totalDue = (monthlyFee * monthsDue) + (financialSettings.enrollmentFee || 0);
-        
-        const debt = Math.max(0, totalDue - totalPaid);
+        for (let m = startMonth; m <= currentMonth; m++) {
+            items.push({ 
+                date: `${year}-${m.toString().padStart(2, '0')}-01`, 
+                desc: `MENSALIDADE - MÊS ${m}`, 
+                debit: monthlyFee, 
+                credit: 0 
+            });
+        }
 
-        return { paid: totalPaid, debt, isLate: debt > 0 };
-    }, [student, selectedYear, financialSettings]);
+        ensureArray(student.payments).filter(p => Number(p.academicYear) === Number(year)).forEach(p => {
+            items.push({ 
+                date: p.date, 
+                desc: `PAGAMENTO: ${p.type} (${p.method || 'Geral'})`, 
+                debit: 0, 
+                credit: p.amount 
+            });
+        });
 
-    const grades = useMemo(() => {
-        if (!selectedYear) return [];
-        return (student.grades || []).filter(g => g.academicYear === selectedYear);
-    }, [student.grades, selectedYear]);
+        return items.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }, [student, year, financialSettings]);
 
-    const attendanceRate = useMemo(() => {
-        if (!selectedYear) return 100;
-        const yearAtt = (student.attendance || []).filter(a => new Date(a.date).getFullYear() === selectedYear);
-        if (yearAtt.length === 0) return 100;
-        const present = yearAtt.filter(a => a.status === 'Presente').length;
-        return Math.round((present / yearAtt.length) * 100);
-    }, [student.attendance, selectedYear]);
+    let runningBalance = 0;
 
     return (
-        <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 hover:shadow-2xl transition-shadow">
-            <div className="p-6 bg-gradient-to-r from-indigo-900 to-slate-800 text-white">
-                <div className="flex flex-col md:flex-row gap-6 items-center">
-                    <img className="h-24 w-24 rounded-full object-cover border-4 border-white/20 shadow-lg" src={student.profilePictureUrl || 'https://i.pravatar.cc/150'} alt="" />
-                    <div className="text-center md:text-left flex-1">
-                        <h3 className="text-2xl font-black uppercase tracking-tight">{student.name}</h3>
-                        <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                             <div className="flex items-center text-indigo-300 text-xs font-bold uppercase"><AcademicCapIcon className="w-4 h-4 mr-1" /> {activeTurma ? `${activeTurma.classLevel} - ${activeTurma.name}` : student.desiredClass}</div>
-                             <div className="flex items-center text-indigo-300 text-xs font-bold uppercase"><CalendarIcon className="w-4 h-4 mr-1" /> ID: {student.id}</div>
-                             <div className={`flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase ${student.status === 'Ativo' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>{student.status}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-2"><ChartBarIcon className="w-4 h-4 mr-2" /> Rendimento Académico</h4>
-                    {grades.length > 0 ? (
-                        <div className="space-y-2">
-                            {grades.slice(0, 3).map((g, i) => (
-                                <div key={i} className="flex justify-between items-center text-sm">
-                                    <span className="text-gray-600 truncate mr-2">{g.subject}</span>
-                                    <span className={`font-black ${g.grade! >= 10 ? 'text-indigo-600' : 'text-red-500'}`}>{g.grade}</span>
-                                </div>
-                            ))}
-                            {grades.length > 3 && <p className="text-[10px] text-gray-400 text-right">+ {grades.length - 3} disciplinas</p>}
-                        </div>
-                    ) : <p className="text-sm text-gray-400 italic">Sem notas registadas.</p>}
-                </div>
-
-                <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-2"><CheckCircleIcon className="w-4 h-4 mr-2" /> Assiduidade</h4>
-                    <div className="text-center">
-                        <div className={`text-4xl font-black ${attendanceRate >= 90 ? 'text-green-600' : 'text-orange-500'}`}>{attendanceRate}%</div>
-                        <button onClick={() => setIsAttModalOpen(true)} className="text-[10px] text-indigo-500 font-bold uppercase mt-2 hover:underline tracking-widest">Ver Detalhes</button>
-                    </div>
-                </div>
-
-                <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-2"><CurrencyDollarIcon className="w-4 h-4 mr-2" /> Situação Financeira</h4>
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+                <header className="p-8 border-b bg-slate-50 flex justify-between items-center">
                     <div>
-                        <div className="flex justify-between text-xs mb-1"><span className="text-gray-500">Pagas</span><span className="font-bold text-gray-800">{financialStatus.paid.toLocaleString()} MT</span></div>
-                        <div className="flex justify-between text-xs"><span className="text-gray-500">Dívida Estimada</span><span className={`font-bold ${financialStatus.debt > 0 ? 'text-red-500' : 'text-green-600'}`}>{financialStatus.debt.toLocaleString()} MT</span></div>
-                        <div className="flex gap-2 mt-4">
-                            <button onClick={() => setIsFinModalOpen(true)} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-gray-200 transition-colors">Extrato</button>
-                            {financialStatus.debt > 0 && financialSettings.enableMobilePayments && (
-                                <button onClick={() => onOpenPaymentModal(student, financialStatus.debt)} className="flex-1 bg-green-600 text-white py-2 rounded-xl text-[10px] font-black uppercase hover:bg-green-700 shadow-lg shadow-green-100 transition-colors">Pagar</button>
-                            )}
-                        </div>
+                        <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Extrato de Conta Corrente</h3>
+                        <p className="text-sm font-bold text-indigo-500">{student.name} • Ano Letivo {year}</p>
                     </div>
+                    <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors">
+                        <CloseIcon className="w-8 h-8 text-slate-400" />
+                    </button>
+                </header>
+                <div className="flex-1 overflow-y-auto p-8">
+                    <table className="w-full text-sm">
+                        <thead className="text-[10px] font-black uppercase text-slate-400 border-b">
+                            <tr>
+                                <th className="text-left py-4">Data</th>
+                                <th className="text-left py-4">Descrição</th>
+                                <th className="text-right py-4">Débito</th>
+                                <th className="text-right py-4">Crédito</th>
+                                <th className="text-right py-4">Saldo</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {ledger.map((item, i) => {
+                                runningBalance += (item.debit - item.credit);
+                                return (
+                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                        <td className="py-4 text-slate-500 whitespace-nowrap">{new Date(item.date).toLocaleDateString()}</td>
+                                        <td className="py-4 font-bold text-slate-700">{item.desc}</td>
+                                        <td className="py-4 text-right text-rose-600 font-bold">{item.debit > 0 ? formatCurrency(item.debit) : '-'}</td>
+                                        <td className="py-4 text-right text-emerald-600 font-bold">{item.credit > 0 ? formatCurrency(item.credit) : '-'}</td>
+                                        <td className={`py-4 text-right font-black ${runningBalance > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                            {formatCurrency(runningBalance)}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
-
-                <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-2"><ExclamationTriangleIcon className="w-4 h-4 mr-2" /> Comportamento</h4>
-                    <div className="space-y-2">
-                        {(student.behavior || []).filter(b => new Date(b.date).getFullYear() === selectedYear).length > 0 ? (
-                            <div className="bg-red-50 text-red-700 p-3 rounded-2xl text-xs font-bold border border-red-100 flex items-center gap-2">
-                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
-                                <span>{(student.behavior || []).filter(b => new Date(b.date).getFullYear() === selectedYear).length} Ocorrências Negativas</span>
-                            </div>
-                        ) : (
-                            <div className="bg-green-50 text-green-700 p-3 rounded-2xl text-xs font-bold border border-green-100 flex items-center gap-2">
-                                <CheckCircleIcon className="w-4 h-4 flex-shrink-0" />
-                                <span>Bom Comportamento</span>
-                            </div>
-                        )}
+                <footer className="p-8 bg-slate-900 text-white flex justify-between items-center">
+                    <div>
+                        <p className="text-[10px] font-black uppercase text-indigo-300 mb-1">Saldo Corrente</p>
+                        <p className="text-3xl font-black">{formatCurrency(Math.abs(runningBalance))}</p>
+                        <p className="text-[10px] uppercase font-bold">{runningBalance > 0 ? 'Dívida a Regularizar' : 'Situação Regularizada'}</p>
                     </div>
-                </div>
+                    <button onClick={onClose} className="bg-indigo-600 px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all">Fechar Extrato</button>
+                </footer>
             </div>
-
-            <FinancialHistoryModal isOpen={isFinModalOpen} onClose={() => setIsFinModalOpen(false)} student={student} selectedYear={selectedYear} financialSettings={financialSettings} schoolSettings={schoolSettings} />
-            <AttendanceHistoryModal isOpen={isAttModalOpen} onClose={() => setIsAttModalOpen(false)} student={student} selectedYear={selectedYear} />
         </div>
     );
 };
 
-const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdateCurrentUser, students, onStudentsChange, academicYears, schoolSettings, turmas, financialSettings, activeView = 'painel', setActiveView, onAddNotifications, users }) => {
+const StudentInfoCard: React.FC<{ 
+    student: Student; 
+    selectedYear: number | null; 
+    academicYears: AcademicYear[]; 
+    schoolSettings: SchoolSettings; 
+    turmas: Turma[]; 
+    financialSettings: FinancialSettings;
+    onOpenStatement: (s: Student) => void;
+}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement }) => {
+    const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior'>('grades');
 
-    const myStudents = useMemo(() => students.filter(s => s.guardianName === user.name), [students, user.name]);
+    const activeTurma = useMemo(() => {
+        if (!selectedYear) return null;
+        return turmas.find(t => Number(t.academicYear) === Number(selectedYear) && ensureArray(t.studentIds).includes(student.id));
+    }, [turmas, selectedYear, student.id]);
 
-    const availableYears = useMemo(() => {
-        const years = new Set<number>();
-        myStudents.forEach(student => {
-            // Grades years
-            (student.grades || []).forEach(grade => years.add(grade.academicYear));
+    const academicYearConfig = useMemo(() => academicYears.find(ay => Number(ay.year) === Number(selectedYear)), [academicYears, selectedYear]);
+    
+    const subjects = useMemo(() => {
+        if (!activeTurma || !academicYearConfig) return [];
+        return ensureArray(academicYearConfig.subjectsByClass).find(cs => cs.classLevel === activeTurma.classLevel)?.subjects || [];
+    }, [activeTurma, academicYearConfig]);
+
+    const hasExam = useMemo(() => {
+        if (!activeTurma || !academicYearConfig) return false;
+        return !!ensureArray(academicYearConfig.subjectsByClass).find(cs => cs.classLevel === activeTurma.classLevel)?.hasExam;
+    }, [activeTurma, academicYearConfig]);
+
+    const calcMF = (acs1: number = 0, acs2: number = 0, at: number = 0) => {
+        const p1 = schoolSettings.evaluationWeights?.p1 || 40;
+        const p2 = schoolSettings.evaluationWeights?.p2 || 60;
+        const mediaACS = (acs1 + acs2) / 2;
+        const mf = ((mediaACS * p1) + (at * p2)) / (p1 + p2);
+        return parseFloat(mf.toFixed(1));
+    };
+
+    const academicSummary = useMemo(() => {
+        if (!selectedYear || subjects.length === 0) return { globalAvg: 0, passed: false };
+        let totalSum = 0; let count = 0;
+        subjects.forEach(sub => {
+            const grades = ensureArray(student.grades);
+            const t1 = grades.find(g => g.subject === sub.name && g.period === '1º Trimestre' && Number(g.academicYear) === Number(selectedYear));
+            const t2 = grades.find(g => g.subject === sub.name && g.period === '2º Trimestre' && Number(g.academicYear) === Number(selectedYear));
+            const t3 = grades.find(g => g.subject === sub.name && g.period === '3º Trimestre' && Number(g.academicYear) === Number(selectedYear));
             
-            // Turmas years - IMPORTANT: Check if student is enrolled in any class for a year
+            const mf1 = t1 ? calcMF(t1.acs1, t1.acs2, t1.at) : 0;
+            const mf2 = t2 ? calcMF(t2.acs1, t2.acs2, t2.at) : 0;
+            const mf3 = t3 ? calcMF(t3.acs1, t3.acs2, t3.at) : 0;
+            
+            const valid = [mf1, mf2, mf3].filter(m => m > 0);
+            const mediaI = valid.length > 0 ? valid.reduce((a,b) => a+b, 0) / valid.length : 0;
+            
+            let final = mediaI;
+            if (hasExam) {
+                const ex = ensureArray(student.examGrades).find(e => e.subject === sub.name && Number(e.academicYear) === Number(selectedYear));
+                if (ex) {
+                    const w1 = schoolSettings.examWeights?.internal || 50;
+                    const w2 = schoolSettings.examWeights?.exam || 50;
+                    final = ((mediaI * w1) + (ex.grade * w2)) / (w1 + w2);
+                }
+            }
+            if (final > 0) { totalSum += final; count++; }
+        });
+        const avg = count > 0 ? parseFloat((totalSum / count).toFixed(1)) : 0;
+        return { globalAvg: avg, passed: avg >= 9.5 };
+    }, [student, subjects, selectedYear, hasExam, schoolSettings]);
+
+    // LISTA DE FALTAS: Normalização MySQL
+    const attendanceSummary = useMemo(() => {
+        if (!selectedYear) return { total: 0, present: 0, absent: 0, late: 0, history: [] };
+        
+        const targetYear = Number(selectedYear);
+        const allAttendance = ensureArray(student.attendance);
+
+        const records = allAttendance.filter(a => {
+            const y = safeExtractYear(a.date);
+            return y === targetYear;
+        });
+
+        const present = records.filter(r => r.status === 'Presente').length;
+        const absent = records.filter(r => r.status === 'Ausente').length;
+        const late = records.filter(r => r.status === 'Atrasado').length;
+
+        const sortedHistory = [...records].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        return { 
+            total: records.length, 
+            present, 
+            absent, 
+            late, 
+            history: sortedHistory 
+        };
+    }, [student.attendance, selectedYear]);
+
+    return (
+        <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden mb-10 transition-all hover:shadow-indigo-100">
+            <div className="p-8 bg-slate-900 text-white relative">
+                <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
+                    <img className="h-24 w-24 rounded-3xl object-cover border-4 border-indigo-500 shadow-xl" src={student.profilePictureUrl || 'https://i.pravatar.cc/150'} alt="" />
+                    <div className="flex-1 text-center md:text-left">
+                        <h3 className="text-3xl font-black uppercase tracking-tight">{student.name}</h3>
+                        <p className="text-indigo-400 text-xs font-black uppercase tracking-widest mt-2">
+                             {activeTurma ? `${activeTurma.classLevel} • ${activeTurma.name}` : student.desiredClass}
+                        </p>
+                    </div>
+                    <div className="bg-indigo-600 p-6 rounded-3xl text-center min-w-[160px] border border-indigo-400/30 shadow-2xl">
+                        <p className="text-[10px] font-black uppercase text-indigo-100 mb-1 tracking-widest">Média Global Anual</p>
+                        <p className="text-5xl font-black">{academicSummary.globalAvg || '--'}</p>
+                        <p className={`text-[10px] font-bold mt-1 ${academicSummary.passed ? 'text-emerald-300' : 'text-rose-300'}`}>
+                            {academicSummary.passed ? 'APROVADO' : 'PENDENTE'}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex bg-slate-50 border-b overflow-x-auto no-scrollbar p-2 gap-2">
+                {[
+                    { id: 'grades', label: 'Pauta de Notas', icon: <ChartBarIcon className="w-4 h-4" /> },
+                    { id: 'attendance', label: 'Assiduidade', icon: <CalendarIcon className="w-4 h-4" /> },
+                    { id: 'financial', label: 'Financeiro', icon: <CurrencyDollarIcon className="w-4 h-4" /> },
+                    { id: 'behavior', label: 'Conduta', icon: <StarIcon className="w-4 h-4" /> }
+                ].map(tab => (
+                    <button 
+                        key={tab.id} 
+                        onClick={() => setActiveTab(tab.id as any)} 
+                        className={`flex items-center px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                            activeTab === tab.id 
+                            ? 'bg-white text-indigo-600 shadow-md border border-indigo-100' 
+                            : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                    >
+                        <span className="mr-2">{tab.icon}</span>{tab.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="p-4 md:p-10">
+                {activeTab === 'grades' && (
+                    <div className="overflow-x-auto -mx-4 md:mx-0 rounded-2xl border border-slate-100">
+                        <table className="min-w-full text-[10px] border-collapse">
+                            <thead>
+                                <tr className="bg-slate-900 text-white font-black uppercase tracking-tighter">
+                                    <th className="p-4 text-left border-r border-white/10 sticky left-0 bg-slate-900 z-10">Disciplina</th>
+                                    <th colSpan={5} className="p-2 text-center border-r border-white/10 bg-indigo-900/50">1º Trimestre</th>
+                                    <th colSpan={5} className="p-2 text-center border-r border-white/10 bg-slate-800">2º Trimestre</th>
+                                    <th colSpan={5} className="p-2 text-center border-r border-white/10 bg-indigo-900/50">3º Trimestre</th>
+                                    {hasExam && <th className="p-4 text-center border-r border-white/10 bg-amber-600">Exame</th>}
+                                    <th className="p-4 text-right bg-indigo-600">Média Anual</th>
+                                </tr>
+                                <tr className="bg-slate-100 text-slate-500 font-bold uppercase text-[8px] border-b">
+                                    <th className="p-2 border-r sticky left-0 bg-slate-100 z-10"></th>
+                                    {[1,2,3].map(t => (
+                                        <React.Fragment key={t}>
+                                            <th className="p-1 border-r text-center">ACS1</th>
+                                            <th className="p-1 border-r text-center">ACS2</th>
+                                            <th className="p-1 border-r text-center bg-gray-50">MAC</th>
+                                            <th className="p-1 border-r text-center">AT</th>
+                                            <th className="p-1 border-r text-center bg-indigo-50 font-black">MF</th>
+                                        </React.Fragment>
+                                    ))}
+                                    {hasExam && <th className="p-1 border-r text-center bg-amber-50 font-black">Nota</th>}
+                                    <th className="p-1 text-right bg-indigo-100 font-black px-4">FINAL</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-[11px]">
+                                {subjects.length > 0 ? subjects.map(sub => {
+                                    const grades = ensureArray(student.grades);
+                                    const g1 = grades.find(g => g.subject === sub.name && g.period === '1º Trimestre' && Number(g.academicYear) === Number(selectedYear));
+                                    const g2 = grades.find(g => g.subject === sub.name && g.period === '2º Trimestre' && Number(g.academicYear) === Number(selectedYear));
+                                    const g3 = grades.find(g => g.subject === sub.name && g.period === '3º Trimestre' && Number(g.academicYear) === Number(selectedYear));
+                                    const ex = ensureArray(student.examGrades).find(e => e.subject === sub.name && Number(e.academicYear) === Number(selectedYear));
+
+                                    const getRowData = (g: Grade | undefined) => {
+                                        const acs1 = g?.acs1 || 0;
+                                        const acs2 = g?.acs2 || 0;
+                                        const at = g?.at || 0;
+                                        const mac = parseFloat(((acs1 + acs2) / 2).toFixed(1));
+                                        const mf = calcMF(acs1, acs2, at);
+                                        return { acs1, acs2, mac, at, mf };
+                                    };
+
+                                    const r1 = getRowData(g1);
+                                    const r2 = getRowData(g2);
+                                    const r3 = getRowData(g3);
+
+                                    const valMfs = [r1.mf, r2.mf, r3.mf].filter(m => m > 0);
+                                    const medI = valMfs.length > 0 ? valMfs.reduce((a,b)=>a+b,0)/valMfs.length : 0;
+                                    let final = medI;
+                                    if (hasExam && ex) {
+                                        const w1 = schoolSettings.examWeights?.internal || 50;
+                                        const w2 = schoolSettings.examWeights?.exam || 50;
+                                        final = ((medI * w1) + (ex.grade * w2)) / (w1 + w2);
+                                    }
+
+                                    const renderVal = (v: number) => v > 0 ? v : '-';
+                                    const renderMF = (v: number) => (
+                                        <span className={`font-black ${v >= 9.5 ? 'text-indigo-600' : v > 0 ? 'text-rose-500' : 'text-slate-300'}`}>
+                                            {v > 0 ? v.toFixed(1) : '-'}
+                                        </span>
+                                    );
+
+                                    return (
+                                        <tr key={sub.id} className="hover:bg-indigo-50/30 transition-colors">
+                                            <td className="p-3 font-bold text-slate-700 border-r sticky left-0 bg-white z-10">{sub.name}</td>
+                                            <td className="p-1 text-center border-r">{renderVal(r1.acs1)}</td>
+                                            <td className="p-1 text-center border-r">{renderVal(r1.acs2)}</td>
+                                            <td className="p-1 text-center border-r bg-gray-50 text-slate-400">{renderVal(r1.mac)}</td>
+                                            <td className="p-1 text-center border-r font-bold">{renderVal(r1.at)}</td>
+                                            <td className="p-1 text-center bg-indigo-50/50 border-r">{renderMF(r1.mf)}</td>
+                                            <td className="p-1 text-center border-r">{renderVal(r2.acs1)}</td>
+                                            <td className="p-1 text-center border-r">{renderVal(r2.acs2)}</td>
+                                            <td className="p-1 text-center border-r bg-gray-50 text-slate-400">{renderVal(r2.mac)}</td>
+                                            <td className="p-1 text-center border-r font-bold">{renderVal(r2.at)}</td>
+                                            <td className="p-1 text-center bg-slate-100 border-r">{renderMF(r2.mf)}</td>
+                                            <td className="p-1 text-center border-r">{renderVal(r3.acs1)}</td>
+                                            <td className="p-1 text-center border-r">{renderVal(r3.acs2)}</td>
+                                            <td className="p-1 text-center border-r bg-gray-50 text-slate-400">{renderVal(r3.mac)}</td>
+                                            <td className="p-1 text-center border-r font-bold">{renderVal(r3.at)}</td>
+                                            <td className="p-1 text-center bg-indigo-50/50 border-r">{renderMF(r3.mf)}</td>
+                                            {hasExam && <td className="p-1 text-center bg-amber-50 border-r font-black text-amber-700">{ex?.grade ? ex.grade.toFixed(1) : '-'}</td>}
+                                            <td className={`p-3 text-right font-black bg-indigo-100/30 ${final >= 9.5 ? 'text-slate-900' : 'text-rose-600'}`}>
+                                                {final > 0 ? final.toFixed(1) : '-'}
+                                            </td>
+                                        </tr>
+                                    );
+                                }) : (
+                                    <tr><td colSpan={20} className="py-20 text-center text-slate-400 font-black uppercase tracking-widest opacity-50">Sem pauta disponível.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {activeTab === 'attendance' && (
+                    <div className="space-y-10 animate-fade-in">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                            <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 flex items-center justify-between shadow-sm">
+                                <div>
+                                    <p className="text-[10px] font-black text-emerald-600 uppercase mb-1 tracking-widest">Presenças</p>
+                                    <p className="text-4xl font-black text-emerald-700">{attendanceSummary.present}</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl shadow-sm text-emerald-500"><CheckCircleIcon className="w-10 h-10" /></div>
+                            </div>
+                            <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100 flex items-center justify-between shadow-sm">
+                                <div>
+                                    <p className="text-[10px] font-black text-rose-600 uppercase mb-1 tracking-widest">Faltas</p>
+                                    <p className="text-4xl font-black text-rose-700">{attendanceSummary.absent}</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl shadow-sm text-rose-500"><CloseIcon className="w-10 h-10" /></div>
+                            </div>
+                            <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100 flex items-center justify-between shadow-sm">
+                                <div>
+                                    <p className="text-[10px] font-black text-amber-600 uppercase mb-1 tracking-widest">Atrasos</p>
+                                    <p className="text-4xl font-black text-amber-700">{attendanceSummary.late}</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl shadow-sm text-amber-500"><ClockIcon className="w-10 h-10" /></div>
+                            </div>
+                            <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100 flex items-center justify-between shadow-sm">
+                                <div>
+                                    <p className="text-[10px] font-black text-indigo-600 uppercase mb-1 tracking-widest">Assiduidade</p>
+                                    <p className="text-4xl font-black text-indigo-700">{attendanceSummary.total > 0 ? Math.round((attendanceSummary.present / attendanceSummary.total) * 100) : 100}%</p>
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl shadow-sm text-indigo-500"><ChartBarIcon className="w-10 h-10" /></div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center">
+                                <CalendarIcon className="w-5 h-5 mr-3 text-indigo-600" />
+                                Histórico Detalhado de Incidentes
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {attendanceSummary.history.filter(a => a.status !== 'Presente').length > 0 ? (
+                                    attendanceSummary.history.filter(a => a.status !== 'Presente').map((record, i) => (
+                                        <div key={i} className="flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-100 shadow-sm transition-transform hover:scale-[1.01]">
+                                            <div className="flex items-center">
+                                                <div className={`p-3 rounded-xl mr-4 ${record.status === 'Ausente' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
+                                                    {record.status === 'Ausente' ? <CloseIcon className="w-6 h-6" /> : <ClockIcon className="w-6 h-6" />}
+                                                </div>
+                                                <div>
+                                                    <p className="text-md font-black text-slate-800">
+                                                        {new Date(record.date).toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                    </p>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{record.status}</p>
+                                                </div>
+                                            </div>
+                                            <span className="text-[9px] font-black text-slate-300 uppercase bg-slate-50 px-3 py-1 rounded-full">Automático</span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="col-span-full text-center py-16 bg-emerald-50 rounded-[2.5rem] border border-emerald-100">
+                                        <CheckCircleIcon className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
+                                        <p className="text-emerald-700 font-black uppercase tracking-widest text-sm">Nenhuma falta ou atraso registado.</p>
+                                        <p className="text-emerald-600/60 text-xs mt-1">O aluno possui 100% de assiduidade neste período.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'financial' && (
+                    <div className="bg-slate-50 p-10 rounded-[3rem] border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-10">
+                        <div className="text-center md:text-left flex-1">
+                            <p className="text-xs text-indigo-500 font-black uppercase tracking-widest mb-2">Situação Financeira</p>
+                            <h4 className="text-3xl font-black text-slate-800 tracking-tight leading-tight">Extrato de Conta Corrente</h4>
+                            <p className="text-sm text-slate-500 mt-2 font-medium max-w-lg">Consulte mensalidades, faturas e todos os pagamentos efetuados no ano letivo corrente de forma detalhada.</p>
+                        </div>
+                        <button 
+                            onClick={() => onOpenStatement(student)}
+                            className="w-full md:w-auto bg-slate-900 text-white px-12 py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-indigo-600 transition-all transform active:scale-95 flex items-center justify-center"
+                        >
+                            <PrinterIcon className="w-5 h-5 mr-3" />
+                            Ver Extrato Digital
+                        </button>
+                    </div>
+                )}
+
+                {activeTab === 'behavior' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 animate-fade-in">
+                        {['1º Trimestre', '2º Trimestre', '3º Trimestre'].map(p => {
+                            const evaluations = ensureArray(student.behaviorEvaluations);
+                            const evalObj = evaluations.find(b => b.period === p && Number(b.academicYear) === Number(selectedYear));
+                            const score = evalObj?.percentage || 0;
+                            return (
+                                <div key={p} className="p-8 bg-white rounded-[2.5rem] text-center border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">{p}</p>
+                                    <div className={`text-5xl font-black mb-4 ${score >= 80 ? 'text-emerald-600' : score >= 50 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                                        {score ? `${score}%` : '--'}
+                                    </div>
+                                    <div className="flex justify-center gap-1">
+                                        {[1,2,3,4,5].map(s => <StarIcon key={s} className={`w-5 h-5 ${s <= Math.round(score/20) ? 'text-amber-400' : 'text-slate-100'}`} filled />)}
+                                    </div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-4">
+                                        {score === 0 ? 'Sem Avaliação' : score >= 80 ? 'Excelente' : score >= 50 ? 'Bom' : 'Requer Atenção'}
+                                    </p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdateCurrentUser, students, onStudentsChange, academicYears, schoolSettings, turmas, financialSettings, activeView = 'painel', setActiveView }) => {
+    const myStudents = useMemo(() => students.filter(s => String(s.guardianName).trim().toLowerCase() === String(user.name).trim().toLowerCase()), [students, user.name]);
+    
+    const availableYears = useMemo(() => {
+        const yearsSet = new Set<number>();
+        
+        myStudents.forEach(s => {
+            ensureArray(s.attendance).forEach(a => {
+                const y = safeExtractYear(a.date);
+                if (y > 2000) yearsSet.add(y);
+            });
+            ensureArray(s.grades).forEach(g => {
+                const y = Number(g.academicYear);
+                if (y > 2000) yearsSet.add(y);
+            });
             turmas.forEach(t => {
-                if (t.studentIds.includes(student.id)) {
-                    years.add(t.academicYear);
+                if (ensureArray(t.studentIds).includes(s.id) && Number(t.academicYear) > 2000) {
+                    yearsSet.add(Number(t.academicYear));
                 }
             });
         });
         
-        // If list empty, maybe student is new or system reset? 
-        // We can fallback to 'Em Curso' year from academicYears if needed, but sticking to data is safer.
-        if (years.size === 0) {
-            const active = academicYears.find(ay => ay.status === 'Em Curso');
-            if(active) years.add(active.year);
+        academicYears.forEach(ay => {
+            if (Number(ay.year) > 2000) yearsSet.add(Number(ay.year));
+        });
+
+        if (yearsSet.size === 0) {
+            yearsSet.add(new Date().getFullYear());
         }
         
-        return Array.from(years).sort((a, b) => b - a);
+        return Array.from(yearsSet).sort((a, b) => b - a);
     }, [myStudents, turmas, academicYears]);
 
     const [selectedYear, setSelectedYear] = useState<number | null>(null);
-    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-    const [paymentStudent, setPaymentStudent] = useState<Student | null>(null);
-    const [pendingDebt, setPendingDebt] = useState<number>(0);
+    const [statementStudent, setStatementStudent] = useState<Student | null>(null);
+    const [isStatementOpen, setIsStatementOpen] = useState(false);
 
-    useEffect(() => {
-        if (availableYears.length > 0 && selectedYear === null) {
-            setSelectedYear(availableYears[0]);
+    useEffect(() => { 
+        if (availableYears.length > 0 && (selectedYear === null || !availableYears.includes(Number(selectedYear)))) {
+            const activeYear = academicYears.find(ay => ay.status === 'Em Curso')?.year;
+            setSelectedYear(activeYear ? Number(activeYear) : Number(availableYears[0])); 
         }
-    }, [availableYears, selectedYear]);
-
-    const handleOpenPaymentModal = (student: Student, debt: number) => {
-        setPaymentStudent(student);
-        setPendingDebt(debt);
-        setIsPaymentModalOpen(true);
-    };
-
-    const handlePaymentSuccess = (amount: number, method: string, description: string, referenceMonth?: number) => {
-        if (!paymentStudent || !onStudentsChange) return;
-
-        const newPayment: PaymentRecord = {
-            id: `pay_${Date.now()}_mob`,
-            date: new Date().toISOString().split('T')[0],
-            amount: amount,
-            type: 'Mensalidade', // Default type, description handles details
-            method: method as PaymentMethod, // 'MPesa' | 'e-Mola' etc
-            academicYear: selectedYear || new Date().getFullYear(),
-            description: description,
-            referenceMonth: referenceMonth,
-            operatorName: user.name, // The guardian initiated it
-            items: [{ item: description, value: amount }]
-        };
-
-        const updatedStudents = students.map(s => {
-            if (s.id === paymentStudent.id) {
-                return { ...s, payments: [...(s.payments || []), newPayment] };
-            }
-            return s;
-        });
-
-        onStudentsChange(updatedStudents);
-
-        // Notify Admins
-        if (onAddNotifications && users) {
-            const admins = users.filter(u => u.role === UserRole.ADMIN);
-            const notifications: AppNotification[] = admins.map(admin => ({
-                id: `notif_pay_${Date.now()}_${admin.id}`,
-                userId: admin.id,
-                type: 'admin_alert',
-                title: 'Pagamento Mobile Recebido',
-                message: `Pagamento de ${amount} recebido de ${user.name} via ${method} para o aluno ${paymentStudent.name}.`,
-                read: false,
-                timestamp: new Date().toISOString()
-            }));
-            onAddNotifications(notifications);
-        }
-    };
+    }, [availableYears, selectedYear, academicYears]);
 
     return (
-        <div className="flex h-screen bg-gray-100 font-sans">
+        <div className="flex h-screen bg-[#fcfcfd] font-sans overflow-hidden">
             {setActiveView && <Sidebar user={user} activeView={activeView} setActiveView={setActiveView} />}
             <div className="flex-1 flex flex-col overflow-hidden">
-                <GuardianHeader user={user} onLogout={onLogout} onUpdateProfile={onUpdateCurrentUser} />
-                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-8">
+                <Header user={user} onLogout={onLogout} onUpdateProfile={onUpdateCurrentUser} title="Portal do Encarregado" />
+                <main className="flex-1 overflow-y-auto p-4 md:p-12">
                     <div className="max-w-6xl mx-auto">
-                        <div className="flex flex-col md:flex-row justify-between items-center mb-6">
+                        <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
                             <div>
-                                <h2 className="text-3xl font-bold text-gray-800">Seus Alunos</h2>
-                                <p className="text-gray-500 mt-1">Acompanhe o desempenho escolar, frequência e comportamento.</p>
+                                <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Meus Educandos</h2>
+                                <p className="text-slate-500 font-bold mt-2">Acompanhamento Escolar em Tempo Real.</p>
                             </div>
                             {availableYears.length > 0 && (
-                                <div className="flex items-center space-x-3 mt-4 md:mt-0 bg-white p-2 rounded-lg shadow-sm">
-                                    <label htmlFor="year-select" className="text-sm font-medium text-gray-700 pl-2">Ano Letivo:</label>
-                                    <select
-                                        id="year-select"
-                                        value={selectedYear || ''}
-                                        onChange={(e) => setSelectedYear(Number(e.target.value))}
-                                        className="text-sm border-gray-200 rounded-md focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 bg-gray-50 py-1.5"
+                                <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Filtrar por Ano:</span>
+                                    <select 
+                                        value={selectedYear || ''} 
+                                        onChange={(e) => setSelectedYear(Number(e.target.value))} 
+                                        className="border-none rounded-xl text-sm font-black text-indigo-600 focus:ring-0 bg-slate-50 py-2 pr-10"
                                     >
-                                        {availableYears.map(year => (
-                                            <option key={year} value={year}>{year}</option>
-                                        ))}
+                                        {availableYears.map(year => <option key={year} value={year}>Ano Letivo {year}</option>)}
                                     </select>
                                 </div>
                             )}
                         </div>
-                        
+
                         {myStudents.length > 0 ? (
-                            <div className="space-y-6">
-                                {myStudents.map(student => (
-                                    <StudentInfoCard 
-                                        key={student.id} 
-                                        student={student} 
-                                        selectedYear={selectedYear} 
-                                        academicYears={academicYears}
-                                        schoolSettings={schoolSettings}
-                                        turmas={turmas}
-                                        financialSettings={financialSettings}
-                                        onOpenPaymentModal={handleOpenPaymentModal}
-                                    />
-                                ))}
-                            </div>
+                            myStudents.map(student => (
+                                <StudentInfoCard 
+                                    key={student.id} 
+                                    student={student} 
+                                    selectedYear={selectedYear} 
+                                    academicYears={academicYears}
+                                    schoolSettings={schoolSettings}
+                                    turmas={turmas}
+                                    financialSettings={financialSettings}
+                                    onOpenStatement={(s) => { setStatementStudent(s); setIsStatementOpen(true); }}
+                                />
+                            ))
                         ) : (
-                            <div className="bg-white text-center p-12 rounded-2xl shadow-lg border border-gray-100">
-                                <div className="mx-auto h-24 w-24 text-gray-300 mb-4">
-                                    <UsersIcon className="h-full w-full" />
-                                </div>
-                                <h3 className="text-xl font-semibold text-gray-700">Nenhum aluno encontrado.</h3>
-                                <p className="text-gray-500 mt-2 max-w-md mx-auto">Não há alunos associados à sua conta no momento. Se acredita que isto é um erro, por favor, entre em contato com a secretaria da escola.</p>
+                            <div className="bg-white text-center p-24 rounded-[3rem] shadow-xl border border-slate-100">
+                                <UsersIcon className="w-20 h-20 text-slate-100 mx-auto mb-6" />
+                                <h3 className="text-2xl font-black text-slate-800">Nenhum aluno vinculado</h3>
+                                <p className="text-slate-400 mt-2">Por favor, contacte a secretaria para associar os seus educandos à sua conta de acesso.</p>
                             </div>
                         )}
                     </div>
                 </main>
             </div>
             
-            {paymentStudent && selectedYear && (
-                <MobilePaymentModal 
-                    isOpen={isPaymentModalOpen}
-                    onClose={() => setIsPaymentModalOpen(false)}
-                    student={paymentStudent}
-                    financialSettings={financialSettings}
-                    onPaymentSuccess={handlePaymentSuccess}
-                    pendingAmount={pendingDebt}
-                    selectedYear={selectedYear}
-                    academicYears={academicYears}
-                />
-            )}
+            <StatementModal 
+                isOpen={isStatementOpen} 
+                onClose={() => setIsStatementOpen(false)} 
+                student={statementStudent} 
+                year={selectedYear || 2024} 
+                financialSettings={financialSettings}
+            />
         </div>
     );
 };

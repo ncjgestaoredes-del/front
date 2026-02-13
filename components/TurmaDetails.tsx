@@ -1,8 +1,19 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Turma, Student, Subject, SchoolSettings, Grade, User, UserRole, AttendanceRecord, BehaviorEvaluation, ExamResult } from '../types';
+import { Turma, Student, Subject, SchoolSettings, Grade, User, UserRole, AttendanceRecord, BehaviorEvaluation, ExamResult, AppNotification } from '../types';
 import { ChevronDownIcon, ChartBarIcon, CollectionIcon, BookOpenIcon, CalendarIcon, CheckCircleIcon, StarIcon, ExclamationTriangleIcon, PrinterIcon, CloseIcon, TableCellsIcon } from './icons/IconComponents';
 import { printClassPauta, exportClassPautaToExcel, PrintOptions } from './ReceiptUtils';
+
+// FUNÇÃO PARA PEGAR DATA LOCAL EM FORMATO YYYY-MM-DD (Moçambique)
+const getLocalDateString = () => {
+    const now = new Date();
+    // Moçambique está em UTC+2 fixo
+    const offset = 2 * 60 * 60 * 1000;
+    const localTime = new Date(now.getTime() + offset);
+    // Como Moçambique não tem horário de verão, o offset é sempre +2
+    // Se o computador do usuário já estiver em Moçambique, a data simples resolve:
+    return now.toLocaleDateString('en-CA'); // en-CA retorna YYYY-MM-DD
+};
 
 interface TurmaDetailsProps {
     turma: Turma;
@@ -13,6 +24,8 @@ interface TurmaDetailsProps {
     settings: SchoolSettings;
     currentUser: User;
     hasExam?: boolean; 
+    onAddNotifications?: (notifications: AppNotification[]) => void;
+    users?: User[];
 }
 
 type PeriodOption = '1º Trimestre' | '2º Trimestre' | '3º Trimestre' | 'Situação Anual';
@@ -30,7 +43,6 @@ const behaviorCriteriaList = [
     { key: 'organizacao', label: '7. Organização' },
 ] as const;
 
-// --- PRINT MODAL COMPONENT ---
 interface PrintSettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -63,7 +75,6 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({ isOpen, onClose
                         <label className="block text-sm font-medium text-gray-700 mb-1">Período</label>
                         <select 
                             value={period} 
-                            // @ts-ignore
                             onChange={(e) => setPeriod(e.target.value as PeriodOption)}
                             className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
                         >
@@ -89,7 +100,7 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({ isOpen, onClose
                                     onChange={() => setType('general_detailed')}
                                     className="text-indigo-600 focus:ring-indigo-500"
                                 />
-                                <span className="ml-2 text-sm text-gray-800">Pauta Geral Detalhada (Todas disciplinas: ACS, MAC, AT, MF)</span>
+                                <span className="ml-2 text-sm text-gray-800">Pauta Geral Detalhada</span>
                             </label>
                             <label className="flex items-center cursor-pointer">
                                 <input 
@@ -122,28 +133,14 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({ isOpen, onClose
                     </button>
                     <div className="flex gap-2">
                         <button 
-                            onClick={() => {
-                                if (type === 'detailed' && !subjectId) {
-                                    alert('Selecione uma disciplina.');
-                                    return;
-                                }
-                                onExport({ period, type, subjectId });
-                                onClose();
-                            }}
+                            onClick={() => onExport({ period, type, subjectId })}
                             className="px-3 py-2 text-sm font-bold text-green-700 bg-green-100 hover:bg-green-200 rounded-lg shadow-sm flex items-center"
                         >
                             <TableCellsIcon className="w-4 h-4 mr-1" />
                             Excel
                         </button>
                         <button 
-                            onClick={() => {
-                                if (type === 'detailed' && !subjectId) {
-                                    alert('Selecione uma disciplina.');
-                                    return;
-                                }
-                                onConfirm({ period, type, subjectId });
-                                onClose();
-                            }}
+                            onClick={() => onConfirm({ period, type, subjectId })}
                             className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm flex items-center"
                         >
                             <PrinterIcon className="w-4 h-4 mr-1" />
@@ -156,44 +153,36 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({ isOpen, onClose
     );
 };
 
-const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents, subjects, onUpdateStudents, settings, currentUser, hasExam = false }) => {
-    // Navigation & View State
+const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents, subjects, onUpdateStudents, settings, currentUser, hasExam = false, onAddNotifications, users }) => {
     const [activeView, setActiveView] = useState<ViewMode>('grades');
     const [selectedPeriod, setSelectedPeriod] = useState<PeriodOption>('1º Trimestre');
     const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
     
-    // Grade States
     const [unsavedChanges, setUnsavedChanges] = useState<Record<string, Grade>>({});
     const [unsavedExamChanges, setUnsavedExamChanges] = useState<Record<string, number>>({}); 
 
     const [isOverviewMode, setIsOverviewMode] = useState(false);
     const [isDetailedSummary, setIsDetailedSummary] = useState(false);
     
-    // Attendance States
-    const [attendanceDate, setAttendanceDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    // USANDO DATA LOCAL DE MOÇAMBIQUE
+    const [attendanceDate, setAttendanceDate] = useState<string>(getLocalDateString());
     const [attendanceChanges, setAttendanceChanges] = useState<Record<string, 'Presente' | 'Ausente' | 'Atrasado'>>({});
 
-    // Behavior States
     const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
     const [behaviorChanges, setBehaviorChanges] = useState<Record<string, BehaviorEvaluation>>({});
 
-    // Common State
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-    // Filter subjects based on user role and assignment
     const availableSubjects = useMemo(() => {
         if (currentUser.role === UserRole.PROFESSOR) {
-            // Find assignments for this teacher in this turma
             const assignment = turma.teachers?.find(t => t.teacherId === currentUser.id);
             if (!assignment) return []; 
             return subjects.filter(s => assignment.subjectIds.includes(s.id));
         }
-        // Admins/Secretaria see all subjects
         return subjects;
     }, [subjects, turma, currentUser]);
 
-    // Ensure a subject is selected if available
     useEffect(() => {
         if (availableSubjects.length > 0) {
             if (!selectedSubjectId || !availableSubjects.find(s => s.id === selectedSubjectId)) {
@@ -224,15 +213,11 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
         exportClassPautaToExcel(turma, studentsInTurma, subjects, options, settings, hasExam);
     };
 
-    // --- GRADES LOGIC ---
-
     const calculateFinalGrade = (acs1: number = 0, acs2: number = 0, at: number = 0): number => {
         const p1 = settings.evaluationWeights?.p1 || 40;
         const p2 = settings.evaluationWeights?.p2 || 60;
-        
         const mediaACS = (acs1 + acs2) / 2;
         const final = ((mediaACS * p1) + (at * p2)) / (p1 + p2);
-        
         return parseFloat(final.toFixed(1));
     };
 
@@ -330,18 +315,13 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
             if (studentIndex !== -1) {
                 const student = { ...updatedStudents[studentIndex] };
                 const grades = student.grades ? [...student.grades] : [];
-                
                 const gradeIndex = grades.findIndex(g => 
                     g.subject === newGrade.subject && 
                     g.period === newGrade.period &&
                     g.academicYear === newGrade.academicYear
                 );
-
-                if (gradeIndex !== -1) {
-                    grades[gradeIndex] = newGrade;
-                } else {
-                    grades.push(newGrade);
-                }
+                if (gradeIndex !== -1) grades[gradeIndex] = newGrade;
+                else grades.push(newGrade);
                 student.grades = grades;
                 updatedStudents[studentIndex] = student;
             }
@@ -353,15 +333,10 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                  if (studentIndex !== -1) {
                     const student = { ...updatedStudents[studentIndex] };
                     const exams = student.examGrades ? [...student.examGrades] : [];
-                    
                     const examIndex = exams.findIndex(e => e.subject === selectedSubject.name && e.academicYear === turma.academicYear);
                     const newExam: ExamResult = { subject: selectedSubject.name, grade: gradeVal as number, academicYear: turma.academicYear };
-
-                    if (examIndex !== -1) {
-                        exams[examIndex] = newExam;
-                    } else {
-                        exams.push(newExam);
-                    }
+                    if (examIndex !== -1) exams[examIndex] = newExam;
+                    else exams.push(newExam);
                     student.examGrades = exams;
                     updatedStudents[studentIndex] = student;
                  }
@@ -372,7 +347,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
         setUnsavedChanges({});
         setUnsavedExamChanges({});
         setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
+        setTimeout(() => setSaveStatus('idle'), 3000);
     };
 
     const getGradeValue = (student: Student, field: 'acs1' | 'acs2' | 'at' | 'grade', period: string = selectedPeriod): number => {
@@ -387,11 +362,18 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
         return gradeObj ? ((gradeObj as any)[field] as number | undefined) ?? 0 : 0;
     };
 
-    // --- ATTENDANCE & BEHAVIOR LOGIC (Kept same as before) ---
     const getAttendanceStatus = (student: Student): 'Presente' | 'Ausente' | 'Atrasado' | '' => {
         if (attendanceChanges[student.id]) return attendanceChanges[student.id];
         const record = student.attendance?.find(a => a.date === attendanceDate);
         return record ? record.status : '';
+    };
+
+    const getTotalAbsences = (student: Student) => {
+        if (!student.attendance) return 0;
+        return student.attendance.filter(a => {
+            const year = parseInt(a.date.split('-')[0]) || 0;
+            return year === turma.academicYear && (a.status === 'Ausente' || a.status === 'Atrasado');
+        }).length;
     };
 
     const handleAttendanceChange = (studentId: string, status: 'Presente' | 'Ausente' | 'Atrasado') => {
@@ -403,9 +385,13 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
     const handleSaveAttendance = () => {
         setSaveStatus('saving');
         const updatedStudents = [...allStudents];
+        const notifications: AppNotification[] = [];
+        const dateFormatted = new Date(attendanceDate).toLocaleDateString('pt-PT');
+
         studentsInTurma.forEach(student => {
             const newStatus = attendanceChanges[student.id];
             if (!newStatus) return; 
+            
             const studentIndex = updatedStudents.findIndex(s => s.id === student.id);
             if (studentIndex !== -1) {
                 const s = { ...updatedStudents[studentIndex] };
@@ -416,12 +402,32 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                 else attendance.push(newRecord);
                 s.attendance = attendance;
                 updatedStudents[studentIndex] = s;
+
+                if ((newStatus === 'Ausente' || newStatus === 'Atrasado') && users && onAddNotifications) {
+                    const guardian = users.find(u => u.name === student.guardianName && u.role === UserRole.ENCARREGADO);
+                    if (guardian) {
+                        notifications.push({
+                            id: `att_notif_${Date.now()}_${student.id}`,
+                            userId: guardian.id,
+                            type: 'message',
+                            title: `Alerta de Assiduidade: ${student.name}`,
+                            message: `Status "${newStatus}" registado para o seu educando no dia ${dateFormatted}.`,
+                            read: false,
+                            timestamp: new Date().toISOString(),
+                            relatedId: student.id
+                        });
+                    }
+                }
             }
         });
+
         onUpdateStudents(updatedStudents);
+        if (notifications.length > 0 && onAddNotifications) {
+            onAddNotifications(notifications);
+        }
         setAttendanceChanges({});
         setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
+        setTimeout(() => setSaveStatus('idle'), 3000);
     };
 
     useEffect(() => { setAttendanceChanges({}); }, [attendanceDate]);
@@ -441,9 +447,11 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
     const handleStarClick = (studentId: string, criteria: keyof BehaviorEvaluation['scores'], score: number) => {
         if (!canEditBehavior || selectedPeriod === 'Situação Anual') return;
         setBehaviorChanges(prev => {
-            const currentEval = getStudentBehaviorEval(allStudents.find(s => s.id === studentId)!);
+            const studentRef = allStudents.find(s => s.id === studentId);
+            if (!studentRef) return prev;
+            const currentEval = getStudentBehaviorEval(studentRef);
             const newScores = { ...currentEval.scores, [criteria]: score };
-            const totalScore = Object.values(newScores).reduce((a, b) => a + b, 0);
+            const totalScore = Object.values(newScores).reduce((a, b) => a + Number(b), 0);
             const maxScore = 7 * 5; 
             const percentage = Math.round((totalScore / maxScore) * 100);
             return { ...prev, [studentId]: { ...currentEval, scores: newScores, percentage } };
@@ -470,7 +478,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
         onUpdateStudents(updatedStudents);
         setBehaviorChanges({});
         setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
+        setTimeout(() => setSaveStatus('idle'), 3000);
     };
 
     const getBehaviorStatusColor = (percentage: number) => {
@@ -515,7 +523,6 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                 onExport={handleExportExcel}
             />
 
-            {/* Top Navigation */}
             <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-6 border-b pb-4 gap-4 flex-none">
                 <div>
                     <button onClick={onBack} className="text-gray-500 text-sm font-semibold mb-1 hover:text-indigo-600 flex items-center">
@@ -535,7 +542,6 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                         <button
                             onClick={() => setIsPrintModalOpen(true)}
                             className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm font-medium transition-colors"
-                            title="Imprimir Pauta"
                         >
                             <PrinterIcon className="w-4 h-4 mr-2" />
                             Imprimir / Exportar
@@ -547,31 +553,29 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                             className={`px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${activeView === 'grades' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}
                         >
                             <ChartBarIcon className="w-4 h-4 inline-block mr-2 mb-0.5" />
-                            Pauta de Notas
+                            Notas
                         </button>
                         <button
                             onClick={() => setActiveView('attendance')}
                             className={`px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${activeView === 'attendance' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}
                         >
                             <CalendarIcon className="w-4 h-4 inline-block mr-2 mb-0.5" />
-                            Lista de Presenças
+                            Presenças
                         </button>
                         <button
                             onClick={() => setActiveView('behavior')}
                             className={`px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${activeView === 'behavior' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}
                         >
                             <ExclamationTriangleIcon className="w-4 h-4 inline-block mr-2 mb-0.5" />
-                            Comportamento
+                            Conduta
                         </button>
                     </div>
                 </div>
             </div>
             
             <div className="flex-1 overflow-y-auto pr-2">
-                {/* --- GRADES VIEW --- */}
                 {activeView === 'grades' && (
                     <>
-                        {/* Grade Controls */}
                         <div className="flex flex-wrap items-center justify-between mb-6 gap-3">
                             <div className="flex gap-4 flex-wrap">
                                 {!isOverviewMode && (
@@ -592,9 +596,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                     <label className="block text-xs font-medium text-gray-500 mb-1">Período</label>
                                     <select 
                                         value={selectedPeriod} 
-                                        // @ts-ignore
                                         onChange={(e) => {
-                                            // Fix: cast e.target.value to PeriodOption to fix typing error
                                             setSelectedPeriod(e.target.value as PeriodOption);
                                             if (e.target.value === 'Situação Anual') setIsDetailedSummary(false);
                                         }}
@@ -609,7 +611,6 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
 
                             <div className="flex flex-wrap items-center gap-3">
                                 {saveStatus === 'saved' && <span className="text-green-600 font-bold animate-pulse text-sm">Salvo!</span>}
-                                
                                 {isOverviewMode && selectedPeriod !== 'Situação Anual' && (
                                     <button 
                                         onClick={() => setIsDetailedSummary(!isDetailedSummary)}
@@ -620,10 +621,9 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                         }`}
                                     >
                                         <BookOpenIcon className="w-4 h-4 mr-2" />
-                                        {isDetailedSummary ? 'Visão Simples' : 'Resumo Detalhado'}
+                                        {isDetailedSummary ? 'Simples' : 'Detalhado'}
                                     </button>
                                 )}
-
                                 <button 
                                     onClick={() => {
                                         setIsOverviewMode(!isOverviewMode);
@@ -631,19 +631,8 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                     }}
                                     className="flex items-center px-3 py-2 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg font-medium hover:bg-indigo-100 transition-colors text-sm"
                                 >
-                                    {isOverviewMode ? (
-                                        <>
-                                            <CollectionIcon className="w-4 h-4 mr-2" />
-                                            Ver por Disciplina
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ChartBarIcon className="w-4 h-4 mr-2" />
-                                            Visão Geral
-                                        </>
-                                    )}
+                                    {isOverviewMode ? 'Por Disciplina' : 'Visão Geral'}
                                 </button>
-
                                 {canEditGrades && !isOverviewMode && (
                                     <button 
                                         onClick={handleSaveGrades}
@@ -654,13 +643,12 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                         }`}
                                     >
-                                        {saveStatus === 'saving' ? 'Salvando...' : 'Salvar Notas'}
+                                        {saveStatus === 'saving' ? 'A carregar...' : 'Salvar Notas'}
                                     </button>
                                 )}
                             </div>
                         </div>
 
-                        {/* Grade Table */}
                         <div className="overflow-x-auto border rounded-lg relative max-w-full">
                             <table className="min-w-full divide-y divide-gray-200 border-collapse">
                                 <thead className="bg-gray-50">
@@ -668,9 +656,9 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                         isDetailedSummary && selectedPeriod !== 'Situação Anual' ? (
                                             <>
                                                 <tr>
-                                                    <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px] sticky left-0 bg-gray-50 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-gray-200">Aluno</th>
+                                                    <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px] sticky left-0 bg-gray-50 z-20 shadow-sm border-r">Aluno</th>
                                                     {availableSubjects.map(sub => (
-                                                        <th key={sub.id} colSpan={5} className="px-4 py-2 text-center text-sm font-bold text-indigo-800 uppercase tracking-wider border-b border-l border-gray-200 bg-indigo-50">
+                                                        <th key={sub.id} colSpan={5} className="px-4 py-2 text-center text-sm font-bold text-indigo-800 uppercase tracking-wider border-b border-l bg-indigo-50">
                                                             {sub.name}
                                                         </th>
                                                     ))}
@@ -678,11 +666,11 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                 <tr>
                                                     {availableSubjects.map(sub => (
                                                         <React.Fragment key={sub.id}>
-                                                            <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 border-l border-gray-200 w-16">ACS1</th>
-                                                            <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 w-16">ACS2</th>
-                                                            <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 w-16 bg-gray-50">MAC</th>
-                                                            <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 w-16 font-bold">AT</th>
-                                                            <th className="px-2 py-2 text-center text-xs font-bold text-indigo-900 w-16 bg-indigo-50">MF</th>
+                                                            <th className="px-2 py-2 text-center text-[9px] text-gray-500 border-l w-12">ACS1</th>
+                                                            <th className="px-2 py-2 text-center text-[9px] text-gray-500 w-12">ACS2</th>
+                                                            <th className="px-2 py-2 text-center text-[9px] text-gray-500 w-12 bg-gray-50">MAC</th>
+                                                            <th className="px-2 py-2 text-center text-[9px] text-gray-500 w-12 font-bold">AT</th>
+                                                            <th className="px-2 py-2 text-center text-[9px] text-indigo-900 w-12 bg-indigo-50">MF</th>
                                                         </React.Fragment>
                                                     ))}
                                                 </tr>
@@ -724,7 +712,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                 <>
                                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">ACS 1</th>
                                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">ACS 2</th>
-                                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24 bg-gray-100">Média ACS</th>
+                                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24 bg-gray-100">MAC</th>
                                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24 font-bold">AT (Prova)</th>
                                                     <th className="px-6 py-3 text-center text-xs font-bold text-indigo-900 uppercase tracking-wider w-24 bg-indigo-50">Média Final</th>
                                                 </>
@@ -738,7 +726,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                             if (isDetailedSummary && selectedPeriod !== 'Situação Anual') {
                                                 return (
                                                     <tr key={student.id} className="hover:bg-gray-50">
-                                                        <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-gray-200">
+                                                        <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10 shadow-sm border-r">
                                                             <div className="flex items-center">
                                                                 <img className="h-8 w-8 rounded-full object-cover mr-3" src={student.profilePictureUrl} alt="" />
                                                                 <div className="text-sm font-medium text-gray-900">{student.name}</div>
@@ -748,7 +736,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                             const { acs1, acs2, mediaACS, at, finalGrade } = getDetailedGrades(student, sub.name, selectedPeriod);
                                                             return (
                                                                 <React.Fragment key={sub.id}>
-                                                                    <td className="px-2 py-4 text-center text-xs text-gray-500 border-l border-gray-200">{acs1 > 0 ? acs1 : '-'}</td>
+                                                                    <td className="px-2 py-4 text-center text-xs text-gray-500 border-l">{acs1 > 0 ? acs1 : '-'}</td>
                                                                     <td className="px-2 py-4 text-center text-xs text-gray-500">{acs2 > 0 ? acs2 : '-'}</td>
                                                                     <td className="px-2 py-4 text-center text-xs text-gray-600 font-medium bg-gray-50">{mediaACS > 0 ? mediaACS : '-'}</td>
                                                                     <td className="px-2 py-4 text-center text-xs text-gray-800 font-bold">{at > 0 ? at : '-'}</td>
@@ -763,7 +751,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                 let subjectsCount = 0;
                                                 return (
                                                     <tr key={student.id} className="hover:bg-gray-50">
-                                                        <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10 shadow-sm border-r border-gray-100">
+                                                        <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10 shadow-sm border-r">
                                                             <div className="flex items-center">
                                                                 <img className="h-8 w-8 rounded-full object-cover mr-3" src={student.profilePictureUrl} alt="" />
                                                                 <div className="text-sm font-medium text-gray-900">{student.name}</div>
@@ -781,7 +769,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                                 </td>
                                                             );
                                                         })}
-                                                        <td className="px-4 py-4 text-center text-sm font-bold text-indigo-900 bg-indigo-50 border-l border-gray-200">
+                                                        <td className="px-4 py-4 text-center text-sm font-bold text-indigo-900 bg-indigo-50 border-l">
                                                             {subjectsCount > 0 ? (totalSum / subjectsCount).toFixed(1) : '-'}
                                                         </td>
                                                     </tr>
@@ -791,14 +779,12 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                             const mf1 = getGradeValue(student, 'grade', '1º Trimestre');
                                             const mf2 = getGradeValue(student, 'grade', '2º Trimestre');
                                             const mf3 = getGradeValue(student, 'grade', '3º Trimestre');
-                                            // Média Interna (MF Anual)
                                             const mediaInterna = parseFloat(((mf1 + mf2 + mf3) / 3).toFixed(1));
 
                                             if (hasExam && selectedSubject) {
                                                 const examGrade = getExamGrade(student, selectedSubject.name);
                                                 const finalWithExam = calculateExamFinalGrade(mediaInterna, examGrade);
-                                                const isApproved = finalWithExam >= 10;
-
+                                                const isApproved = finalWithExam >= 9.5;
                                                 return (
                                                     <tr key={student.id} className="hover:bg-gray-50">
                                                         <td className="px-6 py-4 whitespace-nowrap flex items-center">
@@ -827,8 +813,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                     </tr>
                                                 );
                                             } else {
-                                                // No Exam
-                                                const isApproved = mediaInterna >= 10;
+                                                const isApproved = mediaInterna >= 9.5;
                                                 return (
                                                     <tr key={student.id} className="hover:bg-gray-50">
                                                         <td className="px-6 py-4 whitespace-nowrap flex items-center">
@@ -863,7 +848,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                     <td className="px-4 py-2"><input type="number" min="0" max="20" step="0.1" value={acs2} onChange={(e) => handleGradeChange(student.id, 'acs2', e.target.value)} disabled={!canEditGrades} className={`w-full text-center border-gray-300 rounded-md shadow-sm sm:text-sm ${!canEditGrades ? 'bg-gray-100 text-gray-500' : ''}`}/></td>
                                                     <td className="px-4 py-4 text-center text-sm font-medium text-gray-600 bg-gray-50">{mediaACS.toFixed(1)}</td>
                                                     <td className="px-4 py-2"><input type="number" min="0" max="20" step="0.1" value={at} onChange={(e) => handleGradeChange(student.id, 'at', e.target.value)} disabled={!canEditGrades} className={`w-full text-center border-gray-300 rounded-md shadow-sm sm:text-sm font-bold ${!canEditGrades ? 'bg-gray-100 text-gray-500' : 'bg-gray-50'}`}/></td>
-                                                    <td className={`px-6 py-4 text-center text-sm font-bold bg-indigo-50 ${finalGrade >= 10 ? 'text-green-700' : 'text-red-600'}`}>{finalGrade.toFixed(1)}</td>
+                                                    <td className={`px-6 py-4 text-center text-sm font-bold bg-indigo-50 ${finalGrade >= 9.5 ? 'text-green-700' : 'text-red-600'}`}>{finalGrade.toFixed(1)}</td>
                                                 </tr>
                                             );
                                         }
@@ -876,13 +861,12 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                     </>
                 )}
 
-                {/* --- ATTENDANCE & BEHAVIOR VIEWS ... (Kept existing) --- */}
                 {activeView === 'attendance' && (
                     <>
                          <div className="flex flex-wrap items-center justify-between mb-6 gap-3">
                             <div className="flex items-center space-x-4">
                                  <div>
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Data da Chamada</label>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Data</label>
                                     <input 
                                         type="date" 
                                         value={attendanceDate}
@@ -890,13 +874,6 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                         className="p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
                                     />
                                 </div>
-                                {!canEditAttendance && (
-                                    <div className="flex items-end h-full pb-1">
-                                        <span className="text-sm text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                                            Somente Leitura
-                                        </span>
-                                    </div>
-                                )}
                             </div>
                             {canEditAttendance && (
                                  <div className="flex items-center space-x-2">
@@ -910,7 +887,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                         }`}
                                     >
-                                        {saveStatus === 'saving' ? 'Salvando...' : 'Salvar Presenças'}
+                                        {saveStatus === 'saving' ? 'A carregar...' : 'Salvar Chamada'}
                                     </button>
                                  </div>
                             )}
@@ -921,20 +898,27 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                 <thead className="bg-gray-50">
                                     <tr>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">Aluno</th>
+                                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Faltas no Ano</th>
                                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {studentsInTurma.length > 0 ? studentsInTurma.map(student => {
                                         const status = getAttendanceStatus(student);
+                                        const totalAbsences = getTotalAbsences(student);
                                         return (
                                             <tr key={student.id} className="hover:bg-gray-50">
                                                  <td className="px-6 py-4 whitespace-nowrap flex items-center">
                                                     <img className="h-8 w-8 rounded-full object-cover mr-3" src={student.profilePictureUrl} alt="" />
                                                     <div>
                                                         <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                                                        <div className="text-xs text-gray-500">{student.id}</div>
+                                                        <div className="text-[10px] text-gray-500">{student.id}</div>
                                                     </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${totalAbsences > 5 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                                                        {totalAbsences}
+                                                    </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <div className="flex items-center justify-center space-x-4">
@@ -963,7 +947,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                             </tr>
                                         )
                                     }) : (
-                                        <tr><td colSpan={2} className="text-center py-10 text-gray-500">Nenhum aluno nesta turma.</td></tr>
+                                        <tr><td colSpan={3} className="text-center py-10 text-gray-500">Nenhum aluno.</td></tr>
                                     )}
                                 </tbody>
                             </table>
@@ -978,7 +962,6 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                 <label className="block text-xs font-medium text-gray-500 mb-1">Período de Avaliação</label>
                                 <select 
                                     value={selectedPeriod} 
-                                    // @ts-ignore
                                     onChange={(e) => setSelectedPeriod(e.target.value as PeriodOption)}
                                     className="p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
                                 >
@@ -986,9 +969,6 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                         <option key={p} value={p}>{p}</option>
                                     ))}
                                 </select>
-                                {selectedPeriod === 'Situação Anual' && (
-                                    <span className="ml-2 text-xs text-red-500">Selecione um trimestre para avaliar.</span>
-                                )}
                             </div>
                             {canEditBehavior && selectedPeriod !== 'Situação Anual' && (
                                  <div className="flex items-center space-x-2">
@@ -1002,7 +982,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                         }`}
                                     >
-                                        {saveStatus === 'saving' ? 'Salvando...' : 'Salvar Avaliações'}
+                                        {saveStatus === 'saving' ? 'A carregar...' : 'Salvar Avaliações'}
                                     </button>
                                  </div>
                             )}
@@ -1045,9 +1025,9 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                  <div className="col-span-4 text-right">
                                                      <button 
                                                         onClick={() => setExpandedStudentId(isExpanded ? null : student.id)}
-                                                        className="text-indigo-600 hover:text-indigo-900 font-medium text-sm focus:outline-none"
+                                                        className="text-indigo-600 hover:text-indigo-900 font-medium text-sm"
                                                      >
-                                                         {isExpanded ? 'Ocultar Avaliação' : 'Avaliar / Ver Detalhes'}
+                                                         {isExpanded ? 'Ocultar' : 'Avaliar'}
                                                          <ChevronDownIcon className={`w-4 h-4 inline-block ml-1 transition-transform ${isExpanded ? 'rotate-180' : ''}`}/>
                                                      </button>
                                                  </div>
@@ -1081,7 +1061,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                          </React.Fragment>
                                      );
                                  }) : (
-                                     <div className="text-center py-10 text-gray-500">Nenhum aluno nesta turma.</div>
+                                     <div className="text-center py-10 text-gray-500">Nenhum aluno.</div>
                                  )}
                             </div>
                          </div>

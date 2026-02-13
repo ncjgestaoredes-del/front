@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Turma, Student, AcademicYear, SchoolSettings, User, UserRole } from '../types';
+import { Turma, Student, AcademicYear, SchoolSettings, User, UserRole, AppNotification } from '../types';
 import CreateTurmaModal from './CreateTurmaModal';
 import { EditIcon, TrashIcon, UsersIcon, GraduationCapIcon } from './icons/IconComponents';
 import TurmaDetails from './TurmaDetails';
@@ -12,12 +12,13 @@ interface TurmaManagementProps {
     academicYears: AcademicYear[];
     schoolSettings: SchoolSettings;
     users: User[];
-    onStudentsChange?: (students: Student[]) => void; // Necessário para salvar notas
+    onStudentsChange?: (students: Student[]) => void;
     currentUser: User;
+    onAddNotifications: (notifications: AppNotification[]) => void;
 }
 
 const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
-    const { turmas, onTurmasChange, students, academicYears, schoolSettings, users, onStudentsChange, currentUser } = props;
+    const { turmas, onTurmasChange, students, academicYears, schoolSettings, users, onStudentsChange, currentUser, onAddNotifications } = props;
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTurma, setEditingTurma] = useState<Turma | null>(null);
     const [selectedTurma, setSelectedTurma] = useState<Turma | null>(null);
@@ -57,14 +58,11 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
     const filteredTurmas = useMemo(() => {
         let filtered = turmas.filter(t => t.academicYear.toString() === yearFilter);
 
-        // Se for professor, mostrar apenas as turmas onde ele leciona
         if (currentUser.role === UserRole.PROFESSOR) {
             filtered = filtered.filter(t => {
-                // Verifica lista de assignments
                 if (t.teachers) {
                     return t.teachers.some(assignment => assignment.teacherId === currentUser.id);
                 }
-                // Fallback para estrutura antiga (apenas para compatibilidade)
                 // @ts-ignore
                 if (t.teacherIds) return t.teacherIds.includes(currentUser.id);
                 // @ts-ignore
@@ -81,9 +79,7 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
         if (!turma.teachers && !// @ts-ignore
             turma.teacherIds) return <span className="text-gray-400 italic">Sem professores</span>;
 
-        // Normalize data
         let assignments = turma.teachers || [];
-        // Handle legacy data if any
         if (assignments.length === 0 && // @ts-ignore
             turma.teacherIds) {
              // @ts-ignore
@@ -97,7 +93,6 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
 
         if (assignments.length === 0) return <span className="text-gray-400 italic">Sem professores</span>;
 
-        // Find subject names map for this class level and year
         const yearData = academicYears.find(ay => ay.year === turma.academicYear);
         const classSubjects = yearData?.subjectsByClass?.find(cs => cs.classLevel === turma.classLevel)?.subjects || [];
         
@@ -127,7 +122,6 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
 
     const canCreateTurma = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SECRETARIA;
 
-    // Render Detail View
     if (selectedTurma) {
         const yearData = academicYears.find(ay => ay.year === selectedTurma.academicYear);
         const classLevelData = yearData?.subjectsByClass?.find(cl => cl.classLevel === selectedTurma.classLevel);
@@ -144,11 +138,12 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
                 settings={schoolSettings}
                 currentUser={currentUser}
                 hasExam={hasExam}
+                onAddNotifications={onAddNotifications}
+                users={users}
             />
         );
     }
 
-    // Render List View
     return (
         <>
             <CreateTurmaModal

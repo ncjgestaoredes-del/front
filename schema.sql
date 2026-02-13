@@ -1,5 +1,5 @@
 
--- SQL Schema SEI Smart v2.6 - Corrigido para Sincronização Total
+-- SQL Schema SEI Smart v2.7 - Corrigido para incluir Avaliações de Comportamento
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS schools (
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 2. Usuários (Adicionado campos de Professor)
+-- 2. Usuários
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PRIMARY KEY,
     schoolId VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
     CONSTRAINT fk_user_school FOREIGN KEY (schoolId) REFERENCES schools(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 3. Estudantes (Adicionado colunas de transferência e pagamentos em JSON para compatibilidade total)
+-- 3. Estudantes (Corrigido: Adicionado behaviorEvaluations)
 CREATE TABLE IF NOT EXISTS students (
     id VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PRIMARY KEY,
     schoolId VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -65,8 +65,9 @@ CREATE TABLE IF NOT EXISTS students (
     grades JSON,
     examGrades JSON,
     attendance JSON,
-    behavior JSON,
-    payments JSON, -- Agora os pagamentos ficam dentro do aluno para simplificar a persistência do objeto Frontend
+    behavior JSON, -- Notas de ocorrência
+    behaviorEvaluations JSON, -- Avaliação trimestral (ESTAVA FALTANDO)
+    payments JSON,
     extraCharges JSON,
     INDEX (schoolId),
     CONSTRAINT fk_student_school FOREIGN KEY (schoolId) REFERENCES schools(id) ON DELETE CASCADE
@@ -100,7 +101,7 @@ CREATE TABLE IF NOT EXISTS academic_years (
     CONSTRAINT fk_ay_school FOREIGN KEY (schoolId) REFERENCES schools(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 6. Despesas (Adicionado isChargeable)
+-- 6. Despesas
 CREATE TABLE IF NOT EXISTS expenses (
     id VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PRIMARY KEY,
     schoolId VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,

@@ -15,7 +15,12 @@ interface ReportsViewProps {
     expenses: ExpenseRecord[];
 }
 
-// Helper Components for Reports
+const extractYear = (dateStr: any): number => {
+    if (!dateStr) return 0;
+    const match = String(dateStr).match(/\d{4}/);
+    return match ? parseInt(match[0], 10) : 0;
+};
+
 const StatCard: React.FC<{ title: string; value: string | number; subtext?: string; color: string; icon?: React.ReactNode }> = ({ title, value, subtext, color, icon }) => (
     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between">
         <div className="flex justify-between items-start">
@@ -40,7 +45,7 @@ const BarChart: React.FC<{ data: { label: string; value: number; color?: string 
             {data.map((d, idx) => (
                 <div key={idx} className="flex-1 flex flex-col items-center group relative h-full justify-end">
                     <div className="absolute bottom-full mb-1 opacity-0 group-hover:opacity-100 bg-gray-800 text-white text-xs rounded py-1 px-2 transition-opacity z-10 whitespace-nowrap">
-                        {d.label}: {d.value}
+                        {d.label}: {d.value}%
                     </div>
                     <div 
                         className={`w-full rounded-t-md transition-all duration-500 ${d.color || 'bg-indigo-500'}`}
@@ -56,7 +61,6 @@ const BarChart: React.FC<{ data: { label: string; value: number; color?: string 
 const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academicYears, turmas, schoolSettings, users, financialSettings, expenses }) => {
     const [activeTab, setActiveTab] = useState<'students' | 'classes' | 'academic' | 'attendance' | 'staff' | 'teachers_detail' | 'discipline' | 'financial'>('students');
     
-    // Initialize with the Active Year (Em Curso) or the most recent one
     const [selectedYear, setSelectedYear] = useState<number>(() => {
         const active = academicYears.find(y => y.status === 'Em Curso');
         return active ? active.year : new Date().getFullYear();
@@ -187,14 +191,14 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
             if(s.status !== 'Ativo') return;
             const yearGrades = s.grades?.filter(g => g.academicYear === selectedYear) || [];
             if (yearGrades.length === 0) return;
-            const studentSum = yearGrades.reduce((acc, g) => acc + Number(g.grade || 0), 0);
+            const studentSum = yearGrades.reduce((acc, g) => acc + (Number(g.grade) || 0), 0);
             const studentAvg = studentSum / yearGrades.length;
             if (studentAvg >= 14) distribution['Excelente (≥14)']++; else if (studentAvg >= 12) distribution['Bom (12-13)']++; else if (studentAvg >= 10) distribution['Suficiente (10-11)']++; else distribution['Insuficiente (<10)']++;
             if (studentAvg >= 10) approved++; else failed++;
             totalSum += studentSum; gradeCount += yearGrades.length;
             yearGrades.forEach(g => {
                 if (!subjectPerformance[g.subject]) subjectPerformance[g.subject] = { total: 0, count: 0 };
-                subjectPerformance[g.subject].total += Number(g.grade || 0); subjectPerformance[g.subject].count++;
+                subjectPerformance[g.subject].total += (Number(g.grade) || 0); subjectPerformance[g.subject].count++;
             });
         });
         const globalAvg = gradeCount > 0 ? (totalSum / gradeCount).toFixed(1) : '0.0';
@@ -204,18 +208,48 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
         return { globalAvg, distribution, approved, failed, topSubjects: subjectAvgs.slice(0, 3), bottomSubjects: subjectAvgs.slice(-3).reverse() };
     }, [visibleStudents, selectedYear]);
 
-    // --- MODULE 4: ATTENDANCE ---
+    // --- MODULE 4: ATTENDANCE (EXTRAÇÃO ROBUSTA COM REGEX) ---
     const attendanceStats = useMemo(() => {
-        let totalPresent = 0, totalAbsent = 0;
+        let totalPresent = 0, totalAbsent = 0, totalLate = 0;
+        const classAttendance: Record<string, { present: number, total: number }> = {};
+
         visibleStudents.forEach(s => {
+            const studentTurma = visibleTurmas.find(t => t.studentIds.includes(s.id) && t.academicYear === selectedYear);
+            const className = studentTurma ? studentTurma.name : 'Outros';
+
+            if (!classAttendance[className]) classAttendance[className] = { present: 0, total: 0 };
+
             s.attendance?.forEach(a => {
-                if (new Date(a.date).getFullYear() === selectedYear) { if (a.status === 'Presente') totalPresent++; else totalAbsent++; }
+                // MÉTODO SEGURO: Regex para encontrar o ano
+                if (extractYear(a.date) === Number(selectedYear)) {
+                    classAttendance[className].total++;
+                    if (a.status === 'Presente') {
+                        totalPresent++;
+                        classAttendance[className].present++;
+                    } else if (a.status === 'Ausente') {
+                        totalAbsent++;
+                    } else if (a.status === 'Atrasado') {
+                        totalLate++;
+                        totalPresent++;
+                        classAttendance[className].present++;
+                    }
+                }
             });
         });
+
         const totalRecords = totalPresent + totalAbsent;
         const avgPresence = totalRecords > 0 ? Math.round((totalPresent / totalRecords) * 100) : 0;
-        return { avgPresence, totalAbsent };
-    }, [visibleStudents, selectedYear]);
+        
+        const byClass = Object.entries(classAttendance)
+            .map(([label, data]) => ({
+                label,
+                value: data.total > 0 ? Math.round((data.present / data.total) * 100) : 0
+            }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 10);
+
+        return { avgPresence, totalAbsent, totalLate, byClass };
+    }, [visibleStudents, selectedYear, visibleTurmas]);
 
     // --- MODULE 5: STAFF ---
     const staffStats = useMemo(() => {
@@ -226,7 +260,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
         return { teachersCount: teachers.length, adminCount: admin.length, byDegree };
     }, [users]);
 
-    // --- MODULE 6: TEACHERS DETAIL (NEW) ---
+    // --- MODULE 6: TEACHERS DETAIL ---
     const teachersDetailStats = useMemo(() => {
         if (currentUser.role !== UserRole.ADMIN) return null;
         
@@ -281,7 +315,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
         const typeCounts: Record<string, number> = {};
         visibleStudents.forEach(s => {
             s.behavior?.forEach(b => {
-                if (new Date(b.date).getFullYear() === selectedYear && b.type === 'Negativo') {
+                if (extractYear(b.date) === selectedYear && b.type === 'Negativo') {
                     const sev = b.severity || 'Leve'; if (occurrences[sev] !== undefined) occurrences[sev]++;
                     const keyword = b.note.split(' ')[0] || 'Outros'; typeCounts[keyword] = (typeCounts[keyword] || 0) + 1;
                 }
@@ -336,13 +370,14 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                 else if (profile.status === 'Desconto Parcial' && profile.affectedTypes?.includes('Mensalidade')) monthlyFee *= (1 - (profile.discountPercentage || 0) / 100);
                 const checkLimit = (selectedYear === new Date().getFullYear()) ? currentMonth : endMonth;
                 for(let m = startMonth; m <= checkLimit; m++) {
-                     const mYear = new Date(s.matriculationDate).getFullYear();
-                     if (mYear === selectedYear && m < (new Date(s.matriculationDate).getMonth() + 1)) continue;
+                     if (extractYear(s.matriculationDate) === selectedYear && m < (new Date(s.matriculationDate).getMonth() + 1)) continue;
                      if (!s.payments?.some(p => p.academicYear === selectedYear && p.type === 'Mensalidade' && p.referenceMonth === m)) currentDebt += monthlyFee;
                 }
             }
         });
-        const totalExpenses = expenses.filter(e => new Date(e.date).getFullYear() === selectedYear).reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+        const totalExpenses = expenses.filter(e => {
+            return extractYear(e.date) === selectedYear;
+        }).reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
         return {
             revenue: { total: totalRevenue, byCategory: revenueByCategory },
             expenses: { total: totalExpenses },
@@ -433,6 +468,18 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                     </table>
                 `;
                 break;
+            case 'attendance':
+                title = 'Relatório de Assiduidade';
+                contentHtml = `
+                    <div class="stat-grid">
+                        <div class="stat-card"><div class="stat-value">${attendanceStats.avgPresence}%</div><div class="stat-label">Presença Média</div></div>
+                        <div class="stat-card"><div class="stat-value">${attendanceStats.totalAbsent}</div><div class="stat-label">Total Faltas</div></div>
+                        <div class="stat-card"><div class="stat-value">${attendanceStats.totalLate}</div><div class="stat-label">Total Atrasos</div></div>
+                    </div>
+                    <h4>Ranking por Turma</h4>
+                    ${getSummaryTable(Object.fromEntries(attendanceStats.byClass.map(c => [c.label, c.value + '%'])))}
+                `;
+                break;
             default:
                 title = 'Relatório Estatístico';
                 contentHtml = '<p>Selecione uma aba específica para imprimir os dados detalhados.</p>';
@@ -451,6 +498,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                             <StatCard title="Total Alunos (Ativos)" value={studentsStats.total} color="text-indigo-600" icon={<UsersIcon className="w-5 h-5 text-indigo-600"/>} />
                             <StatCard title="Novos (Externos)" value={studentsStats.admissionTypes.novos} subtext="Pagaram Matrícula" color="text-green-600" icon={<UserAddIcon className="w-5 h-5 text-green-600"/>} />
                             <StatCard title="Renovações (Internos)" value={studentsStats.admissionTypes.renovacoes} subtext="Pagaram Renovação" color="text-blue-600" icon={<CheckCircleIcon className="w-5 h-5 text-blue-600"/>} />
+                            {/* Fixed typo 'studentsCounts' to 'studentsStats' below */}
                             <StatCard title="Desistentes/Inativos" value={studentsStats.statusCounts.Inativo} color="text-red-600" />
                             <StatCard title="NEE (Nec. Esp.)" value={studentsStats.neeCount} color="text-purple-600" />
                         </div>
@@ -513,9 +561,14 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
             case 'attendance':
                 return (
                     <div className="space-y-6 animate-fade-in">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <StatCard title="Presença Média Global" value={`${attendanceStats.avgPresence}%`} color={attendanceStats.avgPresence > 90 ? "text-green-600" : "text-yellow-600"} icon={<ClockIcon className="w-5 h-5"/>} />
-                            <StatCard title="Total de Faltas Registadas" value={attendanceStats.totalAbsent} color="text-red-600" />
+                            <StatCard title="Faltas Registadas" value={attendanceStats.totalAbsent} color="text-red-600" subtext="Total de ausências" />
+                            <StatCard title="Atrasos Registados" value={attendanceStats.totalLate} color="text-amber-600" subtext="Total de pontualidade baixa" />
+                        </div>
+                        <div className="bg-white p-6 rounded-xl shadow-sm border">
+                            <SectionTitle title="Média de Presença por Turma (Top 10)" />
+                            <BarChart data={attendanceStats.byClass} />
                         </div>
                     </div>
                 );

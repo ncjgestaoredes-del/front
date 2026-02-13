@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { HomeIcon, UsersIcon, BookOpenIcon, ChartBarIcon, CogIcon, GraduationCapIcon, CollectionIcon, CurrencyDollarIcon, ChatBubbleLeftRightIcon, InboxIcon, DocumentDuplicateIcon, CloseIcon } from './icons/IconComponents';
+import { HomeIcon, UsersIcon, BookOpenIcon, ChartBarIcon, CogIcon, GraduationCapIcon, CollectionIcon, CurrencyDollarIcon, ChatBubbleLeftRightIcon, InboxIcon, DocumentDuplicateIcon, CloseIcon, SignalIcon } from './icons/IconComponents';
 import { View } from './Dashboard';
 import { User, UserRole } from '../types';
 
@@ -96,8 +96,14 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, isOp
           </nav>
         </div>
 
-        <div className="p-4 border-t bg-gray-50 text-[10px] text-gray-400 font-bold text-center">
-            V 2.0.0 • SEI SMART
+        <div className="p-4 border-t bg-gray-50 flex flex-col items-center gap-2">
+            <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-green-600">
+                <SignalIcon className="w-3 h-3 animate-pulse" />
+                Base de Dados Conectada
+            </div>
+            <div className="text-[10px] text-gray-400 font-bold">
+                V 2.0.0 • SEI SMART
+            </div>
         </div>
       </div>
     </>

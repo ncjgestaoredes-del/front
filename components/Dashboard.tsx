@@ -224,7 +224,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
         case 'alunos':
             return <StudentList user={user} users={visibleUsers} onUsersChange={onUsersChange} students={visibleStudents} onStudentsChange={onStudentsChange} onAddNotifications={onAddNotifications} financialSettings={financialSettings} academicYears={academicYears} />;
         case 'turmas':
-             return <TurmaManagement turmas={turmas} onTurmasChange={onTurmasChange} students={students} academicYears={academicYears} schoolSettings={schoolSettings} users={users} currentUser={user} onStudentsChange={onStudentsChange} />;
+             return <TurmaManagement turmas={turmas} onTurmasChange={onTurmasChange} students={students} academicYears={academicYears} schoolSettings={schoolSettings} users={users} currentUser={user} onStudentsChange={onStudentsChange} onAddNotifications={onAddNotifications} />;
         case 'professores':
             return <TeacherManagement users={users} onUsersChange={onUsersChange} currentUser={user} />;
         case 'encarregados':
