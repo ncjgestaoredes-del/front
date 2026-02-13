@@ -191,7 +191,7 @@ const StudentInfoCard: React.FC<{
     const academicSummary = useMemo(() => {
         if (!selectedYear || subjects.length === 0) return { globalAvg: 0, passed: false };
         let totalSum = 0; let count = 0;
-        subjects.forEach(sub => {
+        subjects.forEach((sub: Subject) => {
             const grades = ensureArray(student.grades);
             const t1 = grades.find(g => g.subject === sub.name && g.period === '1º Trimestre' && Number(g.academicYear) === Number(selectedYear));
             const t2 = grades.find(g => g.subject === sub.name && g.period === '2º Trimestre' && Number(g.academicYear) === Number(selectedYear));
@@ -317,7 +317,7 @@ const StudentInfoCard: React.FC<{
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-[11px]">
-                                {subjects.length > 0 ? subjects.map(sub => {
+                                {subjects.length > 0 ? subjects.map((sub: Subject) => {
                                     const grades = ensureArray(student.grades);
                                     const g1 = grades.find(g => g.subject === sub.name && g.period === '1º Trimestre' && Number(g.academicYear) === Number(selectedYear));
                                     const g2 = grades.find(g => g.subject === sub.name && g.period === '2º Trimestre' && Number(g.academicYear) === Number(selectedYear));
