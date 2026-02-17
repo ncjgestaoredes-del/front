@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Student, AcademicYear, SchoolSettings, Turma, FinancialSettings, AppNotification, UserRole, Grade, AttendanceRecord, Subject, PaymentRecord } from '../types';
-import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, ClockIcon, ChartBarIcon, BookOpenIcon, PrinterIcon } from './icons/IconComponents';
+import { User, Student, AcademicYear, SchoolSettings, Turma, FinancialSettings, AppNotification, UserRole, Grade, AttendanceRecord, Subject, PaymentRecord, BehaviorNote } from '../types';
+import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, ClockIcon, ChartBarIcon, BookOpenIcon, PrinterIcon, FilterIcon } from './icons/IconComponents';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { View } from './Dashboard';
@@ -49,6 +49,13 @@ const ensureArray = (data: any): any[] => {
         return [];
     }
 };
+
+const monthsList = [
+    { val: 1, name: 'Janeiro' }, { val: 2, name: 'Fevereiro' }, { val: 3, name: 'Março' },
+    { val: 4, name: 'Abril' }, { val: 5, name: 'Maio' }, { val: 6, name: 'Junho' },
+    { val: 7, name: 'Julho' }, { val: 8, name: 'Agosto' }, { val: 9, name: 'Setembro' },
+    { val: 10, name: 'Outubro' }, { val: 11, name: 'Novembro' }, { val: 12, name: 'Dezembro' }
+];
 
 const StatementModal: React.FC<{ 
     isOpen: boolean; 
@@ -161,7 +168,11 @@ const StudentInfoCard: React.FC<{
     financialSettings: FinancialSettings;
     onOpenStatement: (s: Student) => void;
 }> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement }) => {
-    const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior'>('grades');
+    const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior' | 'discipline'>('grades');
+    
+    // Estados para filtros de assiduidade
+    const [attMonthFilter, setAttMonthFilter] = useState<string>('all');
+    const [attCategoryFilter, setAttCategoryFilter] = useState<string>('all');
 
     const activeTurma = useMemo(() => {
         if (!selectedYear) return null;
@@ -219,32 +230,50 @@ const StudentInfoCard: React.FC<{
         return { globalAvg: avg, passed: avg >= 9.5 };
     }, [student, subjects, selectedYear, hasExam, schoolSettings]);
 
-    // LISTA DE FALTAS: Normalização MySQL
+    // LISTA DE FALTAS: Normalização MySQL com Filtros
     const attendanceSummary = useMemo(() => {
         if (!selectedYear) return { total: 0, present: 0, absent: 0, late: 0, history: [] };
         
         const targetYear = Number(selectedYear);
         const allAttendance = ensureArray(student.attendance);
 
-        const records = allAttendance.filter(a => {
-            const y = safeExtractYear(a.date);
-            return y === targetYear;
-        });
+        // Filtro base por ano
+        const recordsInYear = allAttendance.filter(a => safeExtractYear(a.date) === targetYear);
 
-        const present = records.filter(r => r.status === 'Presente').length;
-        const absent = records.filter(r => r.status === 'Ausente').length;
-        const late = records.filter(r => r.status === 'Atrasado').length;
+        // Estatísticas fixas do ano
+        const present = recordsInYear.filter(r => r.status === 'Presente').length;
+        const absent = recordsInYear.filter(r => r.status === 'Ausente').length;
+        const late = recordsInYear.filter(r => r.status === 'Atrasado').length;
 
-        const sortedHistory = [...records].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        // Histórico filtrado para exibição (Incidentes: Faltas e Atrasos)
+        let history = recordsInYear.filter(r => r.status !== 'Presente');
+
+        if (attMonthFilter !== 'all') {
+            history = history.filter(r => (new Date(r.date).getMonth() + 1) === Number(attMonthFilter));
+        }
+
+        if (attCategoryFilter !== 'all') {
+            history = history.filter(r => r.status === attCategoryFilter);
+        }
+
+        const sortedHistory = [...history].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         return { 
-            total: records.length, 
+            total: recordsInYear.length, 
             present, 
             absent, 
             late, 
             history: sortedHistory 
         };
-    }, [student.attendance, selectedYear]);
+    }, [student.attendance, selectedYear, attMonthFilter, attCategoryFilter]);
+
+    // OCORRÊNCIAS DISCIPLINARES
+    const disciplineHistory = useMemo(() => {
+        if (!selectedYear) return [];
+        return ensureArray(student.behavior)
+            .filter(b => safeExtractYear(b.date) === Number(selectedYear))
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [student.behavior, selectedYear]);
 
     return (
         <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden mb-10 transition-all hover:shadow-indigo-100">
@@ -269,10 +298,11 @@ const StudentInfoCard: React.FC<{
 
             <div className="flex bg-slate-50 border-b overflow-x-auto no-scrollbar p-2 gap-2">
                 {[
-                    { id: 'grades', label: 'Pauta de Notas', icon: <ChartBarIcon className="w-4 h-4" /> },
+                    { id: 'grades', label: 'Notas', icon: <ChartBarIcon className="w-4 h-4" /> },
                     { id: 'attendance', label: 'Assiduidade', icon: <CalendarIcon className="w-4 h-4" /> },
-                    { id: 'financial', label: 'Financeiro', icon: <CurrencyDollarIcon className="w-4 h-4" /> },
-                    { id: 'behavior', label: 'Conduta', icon: <StarIcon className="w-4 h-4" /> }
+                    { id: 'discipline', label: 'Ocorrências', icon: <ExclamationTriangleIcon className="w-4 h-4" /> },
+                    { id: 'behavior', label: 'Conduta', icon: <StarIcon className="w-4 h-4" /> },
+                    { id: 'financial', label: 'Financeiro', icon: <CurrencyDollarIcon className="w-4 h-4" /> }
                 ].map(tab => (
                     <button 
                         key={tab.id} 
@@ -386,69 +416,160 @@ const StudentInfoCard: React.FC<{
                 )}
 
                 {activeTab === 'attendance' && (
-                    <div className="space-y-10 animate-fade-in">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                            <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 flex items-center justify-between shadow-sm">
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 flex items-center justify-between shadow-sm">
                                 <div>
-                                    <p className="text-[10px] font-black text-emerald-600 uppercase mb-1 tracking-widest">Presenças</p>
-                                    <p className="text-4xl font-black text-emerald-700">{attendanceSummary.present}</p>
+                                    <p className="text-[8px] font-black text-emerald-600 uppercase mb-0.5 tracking-widest">Presenças</p>
+                                    <p className="text-2xl font-black text-emerald-700">{attendanceSummary.present}</p>
                                 </div>
-                                <div className="bg-white p-4 rounded-2xl shadow-sm text-emerald-500"><CheckCircleIcon className="w-10 h-10" /></div>
+                                <div className="bg-white p-2 rounded-xl text-emerald-500"><CheckCircleIcon className="w-6 h-6" /></div>
                             </div>
-                            <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100 flex items-center justify-between shadow-sm">
+                            <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100 flex items-center justify-between shadow-sm">
                                 <div>
-                                    <p className="text-[10px] font-black text-rose-600 uppercase mb-1 tracking-widest">Faltas</p>
-                                    <p className="text-4xl font-black text-rose-700">{attendanceSummary.absent}</p>
+                                    <p className="text-[8px] font-black text-rose-600 uppercase mb-0.5 tracking-widest">Faltas</p>
+                                    <p className="text-2xl font-black text-rose-700">{attendanceSummary.absent}</p>
                                 </div>
-                                <div className="bg-white p-4 rounded-2xl shadow-sm text-rose-500"><CloseIcon className="w-10 h-10" /></div>
+                                <div className="bg-white p-2 rounded-xl text-rose-500"><CloseIcon className="w-6 h-6" /></div>
                             </div>
-                            <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100 flex items-center justify-between shadow-sm">
+                            <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-center justify-between shadow-sm">
                                 <div>
-                                    <p className="text-[10px] font-black text-amber-600 uppercase mb-1 tracking-widest">Atrasos</p>
-                                    <p className="text-4xl font-black text-amber-700">{attendanceSummary.late}</p>
+                                    <p className="text-[8px] font-black text-amber-600 uppercase mb-0.5 tracking-widest">Atrasos</p>
+                                    <p className="text-2xl font-black text-amber-700">{attendanceSummary.late}</p>
                                 </div>
-                                <div className="bg-white p-4 rounded-2xl shadow-sm text-amber-500"><ClockIcon className="w-10 h-10" /></div>
+                                <div className="bg-white p-2 rounded-xl text-amber-500"><ClockIcon className="w-6 h-6" /></div>
                             </div>
-                            <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100 flex items-center justify-between shadow-sm">
+                            <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex items-center justify-between shadow-sm">
                                 <div>
-                                    <p className="text-[10px] font-black text-indigo-600 uppercase mb-1 tracking-widest">Assiduidade</p>
-                                    <p className="text-4xl font-black text-indigo-700">{attendanceSummary.total > 0 ? Math.round((attendanceSummary.present / attendanceSummary.total) * 100) : 100}%</p>
+                                    <p className="text-[8px] font-black text-indigo-600 uppercase mb-0.5 tracking-widest">Taxa</p>
+                                    <p className="text-2xl font-black text-indigo-700">{attendanceSummary.total > 0 ? Math.round((attendanceSummary.present / attendanceSummary.total) * 100) : 100}%</p>
                                 </div>
-                                <div className="bg-white p-4 rounded-2xl shadow-sm text-indigo-500"><ChartBarIcon className="w-10 h-10" /></div>
+                                <div className="bg-white p-2 rounded-xl text-indigo-500"><ChartBarIcon className="w-6 h-6" /></div>
                             </div>
                         </div>
 
                         <div>
-                            <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center">
-                                <CalendarIcon className="w-5 h-5 mr-3 text-indigo-600" />
-                                Histórico Detalhado de Incidentes
-                            </h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {attendanceSummary.history.filter(a => a.status !== 'Presente').length > 0 ? (
-                                    attendanceSummary.history.filter(a => a.status !== 'Presente').map((record, i) => (
-                                        <div key={i} className="flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-100 shadow-sm transition-transform hover:scale-[1.01]">
-                                            <div className="flex items-center">
-                                                <div className={`p-3 rounded-xl mr-4 ${record.status === 'Ausente' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
-                                                    {record.status === 'Ausente' ? <CloseIcon className="w-6 h-6" /> : <ClockIcon className="w-6 h-6" />}
-                                                </div>
-                                                <div>
-                                                    <p className="text-md font-black text-slate-800">
-                                                        {new Date(record.date).toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' })}
-                                                    </p>
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{record.status}</p>
-                                                </div>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2 border-b border-slate-100 pb-2">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
+                                    <CalendarIcon className="w-4 h-4 mr-2 text-indigo-600" />
+                                    Histórico de Incidentes
+                                </h4>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex items-center bg-slate-100 rounded-lg px-2 py-1">
+                                        <FilterIcon className="w-3 h-3 text-slate-400 mr-1" />
+                                        <select 
+                                            value={attMonthFilter} 
+                                            onChange={(e) => setAttMonthFilter(e.target.value)}
+                                            className="text-[9px] font-black uppercase border-none bg-transparent focus:ring-0 p-0 text-slate-600 cursor-pointer"
+                                        >
+                                            <option value="all">Mês: Todos</option>
+                                            {monthsList.map(m => <option key={m.val} value={m.val}>{m.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="flex items-center bg-slate-100 rounded-lg px-2 py-1">
+                                        <select 
+                                            value={attCategoryFilter} 
+                                            onChange={(e) => setAttCategoryFilter(e.target.value)}
+                                            className="text-[9px] font-black uppercase border-none bg-transparent focus:ring-0 p-0 text-slate-600 cursor-pointer"
+                                        >
+                                            <option value="all">Tipo: Todos</option>
+                                            <option value="Ausente">Faltas</option>
+                                            <option value="Atrasado">Atrasos</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                                {attendanceSummary.history.length > 0 ? (
+                                    attendanceSummary.history.map((record, i) => (
+                                        <div key={i} className="flex items-center p-2.5 bg-white rounded-xl border border-slate-100 shadow-sm transition-transform hover:scale-[1.02]">
+                                            <div className={`p-1.5 rounded-lg mr-2.5 ${record.status === 'Ausente' ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
+                                                {record.status === 'Ausente' ? <CloseIcon className="w-4 h-4" /> : <ClockIcon className="w-4 h-4" />}
                                             </div>
-                                            <span className="text-[9px] font-black text-slate-300 uppercase bg-slate-50 px-3 py-1 rounded-full">Automático</span>
+                                            <div className="min-w-0">
+                                                <p className="text-[11px] font-black text-slate-700 truncate">
+                                                    {new Date(record.date).toLocaleDateString('pt-PT')}
+                                                </p>
+                                                <p className={`text-[8px] font-black uppercase tracking-tighter ${record.status === 'Ausente' ? 'text-rose-400' : 'text-amber-400'}`}>
+                                                    {record.status}
+                                                </p>
+                                            </div>
                                         </div>
                                     ))
                                 ) : (
-                                    <div className="col-span-full text-center py-16 bg-emerald-50 rounded-[2.5rem] border border-emerald-100">
-                                        <CheckCircleIcon className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
-                                        <p className="text-emerald-700 font-black uppercase tracking-widest text-sm">Nenhuma falta ou atraso registado.</p>
-                                        <p className="text-emerald-600/60 text-xs mt-1">O aluno possui 100% de assiduidade neste período.</p>
+                                    <div className="col-span-full text-center py-8 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <p className="text-slate-400 font-black uppercase tracking-widest text-[9px]">Nenhum incidente encontrado com estes filtros.</p>
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'discipline' && (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-6">
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
+                                <ExclamationTriangleIcon className="w-4 h-4 mr-2 text-indigo-600" />
+                                Histórico Disciplinar / Ocorrências
+                            </h4>
+                            <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full uppercase tracking-widest">
+                                {disciplineHistory.length} Ocorrências Registadas
+                            </span>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {disciplineHistory.length > 0 ? (
+                                disciplineHistory.map((occ, idx) => (
+                                    <div key={idx} className={`p-6 rounded-[2rem] border transition-all hover:shadow-md ${
+                                        occ.type === 'Negativo' 
+                                            ? (occ.severity === 'Grave' ? 'bg-rose-50 border-rose-100' : 'bg-orange-50 border-orange-100') 
+                                            : 'bg-emerald-50 border-emerald-100'
+                                    }`}>
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="flex items-center">
+                                                <div className={`p-2 rounded-2xl mr-4 ${
+                                                    occ.type === 'Negativo' 
+                                                        ? (occ.severity === 'Grave' ? 'bg-rose-200 text-rose-700' : 'bg-orange-200 text-orange-700') 
+                                                        : 'bg-emerald-200 text-emerald-700'
+                                                }`}>
+                                                    {occ.type === 'Negativo' ? <ExclamationTriangleIcon className="w-6 h-6" /> : <StarIcon className="w-6 h-6" filled />}
+                                                </div>
+                                                <div>
+                                                    <h5 className={`text-sm font-black uppercase tracking-tight ${
+                                                        occ.type === 'Negativo' 
+                                                            ? (occ.severity === 'Grave' ? 'text-rose-900' : 'text-orange-900') 
+                                                            : 'text-emerald-900'
+                                                    }`}>
+                                                        {occ.type === 'Negativo' ? `Infração ${occ.severity}` : 'Elogio / Reconhecimento'}
+                                                    </h5>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                        {new Date(occ.date).toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white/60 backdrop-blur-sm p-4 rounded-2xl border border-white/50">
+                                            <p className="text-sm text-slate-700 font-medium leading-relaxed italic">"{occ.note}"</p>
+                                        </div>
+                                        {occ.measureTaken && (
+                                            <div className="mt-4 flex items-center gap-2">
+                                                <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Medida Aplicada:</span>
+                                                <span className="text-[11px] font-bold text-slate-800 bg-white/40 px-3 py-1 rounded-full border border-white/50">
+                                                    {occ.measureTaken}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="py-20 text-center bg-slate-50 rounded-[3rem] border border-dashed border-slate-200">
+                                    <CheckCircleIcon className="w-16 h-16 text-emerald-200 mx-auto mb-4" />
+                                    <h5 className="text-lg font-black text-slate-800 uppercase tracking-tight">Comportamento Exemplar</h5>
+                                    <p className="text-sm text-slate-400 font-medium max-w-xs mx-auto">Não existem registos de ocorrências disciplinares para este aluno no ano letivo de {selectedYear}.</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
