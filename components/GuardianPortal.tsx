@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Student, AcademicYear, SchoolSettings, Turma, FinancialSettings, AppNotification, UserRole, Grade, AttendanceRecord, Subject, PaymentRecord, BehaviorNote } from '../types';
-import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, ClockIcon, ChartBarIcon, BookOpenIcon, PrinterIcon, FilterIcon } from './icons/IconComponents';
+import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, ClockIcon, ChartBarIcon, BookOpenIcon, PrinterIcon, FilterIcon, DevicePhoneMobileIcon } from './icons/IconComponents';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { View } from './Dashboard';
+import MobilePaymentModal from './MobilePaymentModal';
 
 interface GuardianPortalProps {
   user: User;
@@ -57,6 +58,38 @@ const monthsList = [
     { val: 10, name: 'Outubro' }, { val: 11, name: 'Novembro' }, { val: 12, name: 'Dezembro' }
 ];
 
+// FUNÇÃO PARA CALCULAR O SALDO DO ALUNO
+const calculateStudentBalance = (student: Student, year: number, financialSettings: FinancialSettings): number => {
+    const startMonth = 2;
+    const now = new Date();
+    const currentMonth = year === now.getFullYear() ? now.getMonth() + 1 : 12;
+    
+    let totalDebit = 0;
+    let totalCredit = 0;
+
+    let monthlyFee = financialSettings.monthlyFee;
+    if (student.desiredClass) {
+        const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
+        if (specific) monthlyFee = specific.monthlyFee;
+    }
+
+    for (let m = startMonth; m <= currentMonth; m++) {
+        totalDebit += monthlyFee;
+    }
+
+    ensureArray(student.payments).filter(p => Number(p.academicYear) === Number(year)).forEach(p => {
+        totalCredit += p.amount;
+    });
+
+    ensureArray(student.extraCharges).forEach(ec => {
+        if (!ec.isPaid) {
+            totalDebit += ec.amount;
+        }
+    });
+
+    return totalDebit - totalCredit;
+};
+
 const StatementModal: React.FC<{ 
     isOpen: boolean; 
     onClose: () => void; 
@@ -97,6 +130,16 @@ const StatementModal: React.FC<{
                 desc: `PAGAMENTO: ${p.type} (${p.method || 'Geral'})`, 
                 debit: 0, 
                 credit: p.amount 
+            });
+        });
+
+        // Adicionar taxas extras ao extrato
+        ensureArray(student.extraCharges).forEach(ec => {
+            items.push({
+                date: ec.date,
+                desc: `TAXA EXTRA: ${ec.description}`,
+                debit: ec.amount,
+                credit: 0
             });
         });
 
@@ -167,7 +210,8 @@ const StudentInfoCard: React.FC<{
     turmas: Turma[]; 
     financialSettings: FinancialSettings;
     onOpenStatement: (s: Student) => void;
-}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement }) => {
+    onOpenPayment: (s: Student) => void;
+}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement, onOpenPayment }) => {
     const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior' | 'discipline'>('grades');
     
     // Estados para filtros de assiduidade
@@ -275,6 +319,17 @@ const StudentInfoCard: React.FC<{
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [student.behavior, selectedYear]);
 
+    const studentBalance = useMemo(() => {
+        if (!selectedYear) return 0;
+        return calculateStudentBalance(student, selectedYear, financialSettings);
+    }, [student, selectedYear, financialSettings]);
+
+    const hasDebt = studentBalance > 0;
+
+    const formatCurrency = (val: number) => {
+        return val.toLocaleString('pt-MZ', { style: 'currency', currency: financialSettings.currency || 'MZN' });
+    };
+
     return (
         <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden mb-10 transition-all hover:shadow-indigo-100">
             <div className="p-8 bg-slate-900 text-white relative">
@@ -286,17 +341,57 @@ const StudentInfoCard: React.FC<{
                              {activeTurma ? `${activeTurma.classLevel} • ${activeTurma.name}` : student.desiredClass}
                         </p>
                     </div>
-                    <div className="bg-indigo-600 p-6 rounded-3xl text-center min-w-[160px] border border-indigo-400/30 shadow-2xl">
-                        <p className="text-[10px] font-black uppercase text-indigo-100 mb-1 tracking-widest">Média Global Anual</p>
-                        <p className="text-5xl font-black">{academicSummary.globalAvg || '--'}</p>
-                        <p className={`text-[10px] font-bold mt-1 ${academicSummary.passed ? 'text-emerald-300' : 'text-rose-300'}`}>
-                            {academicSummary.passed ? 'APROVADO' : 'PENDENTE'}
-                        </p>
-                    </div>
+                    {!hasDebt && (
+                        <div className="bg-indigo-600 p-6 rounded-3xl text-center min-w-[160px] border border-indigo-400/30 shadow-2xl">
+                            <p className="text-[10px] font-black uppercase text-indigo-100 mb-1 tracking-widest">Média Global Anual</p>
+                            <p className="text-5xl font-black">{academicSummary.globalAvg || '--'}</p>
+                            <p className={`text-[10px] font-bold mt-1 ${academicSummary.passed ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                {academicSummary.passed ? 'APROVADO' : 'PENDENTE'}
+                            </p>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            <div className="flex bg-slate-50 border-b overflow-x-auto no-scrollbar p-2 gap-2">
+            {hasDebt ? (
+                <div className="p-10 text-center bg-slate-50">
+                    <div className="max-w-2xl mx-auto">
+                        <div className="bg-rose-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <ExclamationTriangleIcon className="w-10 h-10 text-rose-600" />
+                        </div>
+                        <h4 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-4">Acesso Restrito - Aviso de Cobrança</h4>
+                        <p className="text-slate-600 font-medium mb-8">
+                            As informações académicas e de assiduidade deste aluno estão temporariamente suspensas devido a um saldo pendente na conta corrente.
+                        </p>
+                        
+                        <div className="bg-white p-8 rounded-[2rem] border-2 border-rose-100 shadow-xl mb-8">
+                            <p className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em] mb-2">Total em Dívida</p>
+                            <p className="text-5xl font-black text-slate-900">{formatCurrency(studentBalance)}</p>
+                            <p className="text-xs text-slate-400 font-bold mt-4 uppercase">Regularize a situação na secretaria para restabelecer o acesso total.</p>
+                        </div>
+
+                        <button 
+                            onClick={() => onOpenStatement(student)}
+                            className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-rose-600 transition-all flex items-center justify-center mx-auto"
+                        >
+                            <PrinterIcon className="w-5 h-5 mr-3" />
+                            Ver Detalhes do Débito
+                        </button>
+
+                        {financialSettings.enableMobilePayments && (
+                            <button 
+                                onClick={() => onOpenPayment(student)}
+                                className="mt-4 bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center mx-auto shadow-lg"
+                            >
+                                <DevicePhoneMobileIcon className="w-5 h-5 mr-3" />
+                                Pagar via Mobile Money
+                            </button>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <>
+                    <div className="flex bg-slate-50 border-b overflow-x-auto no-scrollbar p-2 gap-2">
                 {[
                     { id: 'grades', label: 'Notas', icon: <ChartBarIcon className="w-4 h-4" /> },
                     { id: 'attendance', label: 'Assiduidade', icon: <CalendarIcon className="w-4 h-4" /> },
@@ -581,13 +676,24 @@ const StudentInfoCard: React.FC<{
                             <h4 className="text-3xl font-black text-slate-800 tracking-tight leading-tight">Extrato de Conta Corrente</h4>
                             <p className="text-sm text-slate-500 mt-2 font-medium max-w-lg">Consulte mensalidades, faturas e todos os pagamentos efetuados no ano letivo corrente de forma detalhada.</p>
                         </div>
-                        <button 
-                            onClick={() => onOpenStatement(student)}
-                            className="w-full md:w-auto bg-slate-900 text-white px-12 py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-indigo-600 transition-all transform active:scale-95 flex items-center justify-center"
-                        >
-                            <PrinterIcon className="w-5 h-5 mr-3" />
-                            Ver Extrato Digital
-                        </button>
+                        <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                            <button 
+                                onClick={() => onOpenStatement(student)}
+                                className="bg-slate-900 text-white px-12 py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-indigo-600 transition-all transform active:scale-95 flex items-center justify-center"
+                            >
+                                <PrinterIcon className="w-5 h-5 mr-3" />
+                                Ver Extrato Digital
+                            </button>
+                            {financialSettings.enableMobilePayments && (
+                                <button 
+                                    onClick={() => onOpenPayment(student)}
+                                    className="bg-emerald-600 text-white px-12 py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-emerald-700 transition-all transform active:scale-95 flex items-center justify-center"
+                                >
+                                    <DevicePhoneMobileIcon className="w-5 h-5 mr-3" />
+                                    Pagar Agora
+                                </button>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -615,8 +721,10 @@ const StudentInfoCard: React.FC<{
                     </div>
                 )}
             </div>
-        </div>
-    );
+        </>
+    )}
+</div>
+);
 };
 
 const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdateCurrentUser, students, onStudentsChange, academicYears, schoolSettings, turmas, financialSettings, activeView = 'painel', setActiveView }) => {
@@ -655,6 +763,8 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
     const [selectedYear, setSelectedYear] = useState<number | null>(null);
     const [statementStudent, setStatementStudent] = useState<Student | null>(null);
     const [isStatementOpen, setIsStatementOpen] = useState(false);
+    const [paymentStudent, setPaymentStudent] = useState<Student | null>(null);
+    const [isPaymentOpen, setIsPaymentOpen] = useState(false);
 
     useEffect(() => { 
         if (availableYears.length > 0 && (selectedYear === null || !availableYears.includes(Number(selectedYear)))) {
@@ -700,6 +810,7 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                                     turmas={turmas}
                                     financialSettings={financialSettings}
                                     onOpenStatement={(s) => { setStatementStudent(s); setIsStatementOpen(true); }}
+                                    onOpenPayment={(s) => { setPaymentStudent(s); setIsPaymentOpen(true); }}
                                 />
                             ))
                         ) : (
@@ -711,6 +822,15 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                         )}
                     </div>
                 </main>
+                {paymentStudent && (
+                    <MobilePaymentModal 
+                        isOpen={isPaymentOpen}
+                        onClose={() => setIsPaymentOpen(false)}
+                        student={paymentStudent}
+                        financialSettings={financialSettings}
+                        amount={calculateStudentBalance(paymentStudent, selectedYear || new Date().getFullYear(), financialSettings)}
+                    />
+                )}
             </div>
             
             <StatementModal 
