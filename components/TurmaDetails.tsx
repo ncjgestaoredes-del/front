@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Turma, Student, Subject, SchoolSettings, Grade, User, UserRole, AttendanceRecord, BehaviorEvaluation, ExamResult, AppNotification } from '../types';
 import { ChevronDownIcon, ChartBarIcon, CollectionIcon, BookOpenIcon, CalendarIcon, CheckCircleIcon, StarIcon, ExclamationTriangleIcon, PrinterIcon, CloseIcon, TableCellsIcon } from './icons/IconComponents';
 import { printClassPauta, exportClassPautaToExcel, PrintOptions } from './ReceiptUtils';
+import ScheduleManagement from './ScheduleManagement';
 
 // FUNÇÃO PARA PEGAR DATA LOCAL EM FORMATO YYYY-MM-DD (Moçambique)
 const getLocalDateString = () => {
@@ -21,6 +22,7 @@ interface TurmaDetailsProps {
     allStudents: Student[];
     subjects: Subject[];
     onUpdateStudents: (students: Student[]) => void;
+    onUpdateTurma: (turma: Turma) => void;
     settings: SchoolSettings;
     currentUser: User;
     hasExam?: boolean; 
@@ -29,7 +31,7 @@ interface TurmaDetailsProps {
 }
 
 type PeriodOption = '1º Trimestre' | '2º Trimestre' | '3º Trimestre' | 'Situação Anual';
-type ViewMode = 'grades' | 'attendance' | 'behavior';
+type ViewMode = 'grades' | 'attendance' | 'behavior' | 'schedule';
 
 const periods: PeriodOption[] = ['1º Trimestre', '2º Trimestre', '3º Trimestre', 'Situação Anual'];
 
@@ -153,7 +155,7 @@ const PrintSettingsModal: React.FC<PrintSettingsModalProps> = ({ isOpen, onClose
     );
 };
 
-const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents, subjects, onUpdateStudents, settings, currentUser, hasExam = false, onAddNotifications, users }) => {
+const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents, subjects, onUpdateStudents, onUpdateTurma, settings, currentUser, hasExam = false, onAddNotifications, users }) => {
     const [activeView, setActiveView] = useState<ViewMode>('grades');
     const [selectedPeriod, setSelectedPeriod] = useState<PeriodOption>('1º Trimestre');
     const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
@@ -569,11 +571,28 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                             <ExclamationTriangleIcon className="w-4 h-4 inline-block mr-2 mb-0.5" />
                             Conduta
                         </button>
+                        <button
+                            onClick={() => setActiveView('schedule')}
+                            className={`px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${activeView === 'schedule' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}
+                        >
+                            <CalendarIcon className="w-4 h-4 inline-block mr-2 mb-0.5" />
+                            Horário
+                        </button>
                     </div>
                 </div>
             </div>
             
             <div className="flex-1 overflow-y-auto pr-2">
+                {activeView === 'schedule' && (
+                    <ScheduleManagement 
+                        turma={turma} 
+                        subjects={subjects} 
+                        users={users || []} 
+                        onUpdateTurma={onUpdateTurma} 
+                        currentUser={currentUser} 
+                        settings={settings}
+                    />
+                )}
                 {activeView === 'grades' && (
                     <>
                         <div className="flex flex-wrap items-center justify-between mb-6 gap-3">

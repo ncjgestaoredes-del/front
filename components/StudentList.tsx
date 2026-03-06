@@ -172,8 +172,10 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
           if (!isNaN(matriculationYear)) {
               if (matriculationYear === currentYear) {
                   totalObligation += getFee('Matrícula', enrollmentFeeBase);
+                  totalObligation += financialSettings.annualExamFee || 0;
               } else if (matriculationYear < currentYear && student.status !== 'Inativo') {
                   totalObligation += getFee('Renovação', renewalFeeBase);
+                  totalObligation += financialSettings.annualExamFee || 0;
               }
           }
 
@@ -234,7 +236,12 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
               });
           }
 
-          // D. Compras Loja
+          // D. Compras Loja e Débitos On-demand
+          student.payments?.filter(p => p.academicYear === currentYear).forEach(p => {
+              if (['Uniforme', 'Material', 'Taxa de Transferência'].includes(p.type)) {
+                  totalObligation += p.amount;
+              }
+          });
           
           const balance = totalPaid - totalObligation;
           // Tolerância de 50 meticais

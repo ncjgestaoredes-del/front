@@ -13,7 +13,7 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings>({ totalClassrooms: 10, studentsPerClass: 25, shifts: 2 });
+  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings>({ totalClassrooms: 10, studentsPerClass: 25, shifts: 2, lessonDurationMinutes: 45, breakDurationMinutes: 15 });
   const [financialSettings, setFinancialSettings] = useState<FinancialSettings>({ currency: 'MZN', enrollmentFee: 2500, renewalFee: 1500, monthlyFee: 5000, annualExamFee: 1000, transferFee: 500, monthlyPaymentLimitDay: 10, latePaymentPenaltyPercent: 10, uniforms: [], books: [] });
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);

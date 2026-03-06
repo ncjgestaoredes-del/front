@@ -183,12 +183,30 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
     };
 
     const getMonthlyFinancialStatus = (student: Student, year: number, month: number) => {
+        const matriculationDate = new Date(student.matriculationDate);
+        const matriculationMonth = matriculationDate.getMonth() + 1;
+        const matriculationYear = matriculationDate.getFullYear();
+
+        // Se o mês for anterior à matrícula no mesmo ano, ou se o ano for anterior à matrícula
+        const isBeforeEnrollment = (matriculationYear === year && month < matriculationMonth) || (matriculationYear > year);
+
         const payments = student.payments?.filter(p => 
             p.academicYear === year && 
             (p.type === 'Mensalidade' || p.type === 'Matrícula' || p.type === 'Renovação') && 
             p.referenceMonth === month
         ) || [];
         const totalPaid = payments.reduce((acc, curr) => acc + curr.amount, 0);
+        
+        if (isBeforeEnrollment) {
+            return {
+                totalPaid,
+                totalRequired: 0,
+                remaining: 0,
+                isFullyPaid: true,
+                isPartiallyPaid: false
+            };
+        }
+
         const baseFee = getMonthlyFeeForStudent(student);
         const isLate = isPaymentLate(month, year, student);
         const penalty = isLate ? (baseFee * (financialSettings.latePaymentPenaltyPercent / 100)) : 0;

@@ -127,6 +127,11 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
         const classLevelData = yearData?.subjectsByClass?.find(cl => cl.classLevel === selectedTurma.classLevel);
         const subjectsForTurma = classLevelData?.subjects || [];
         const hasExam = classLevelData?.hasExam || false;
+
+        const handleUpdateTurma = (updatedTurma: Turma) => {
+            onTurmasChange(turmas.map(t => t.id === updatedTurma.id ? updatedTurma : t));
+            setSelectedTurma(updatedTurma);
+        };
             
         return (
             <TurmaDetails 
@@ -135,6 +140,7 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
                 allStudents={students}
                 subjects={subjectsForTurma}
                 onUpdateStudents={onStudentsChange || (() => {})}
+                onUpdateTurma={handleUpdateTurma}
                 settings={schoolSettings}
                 currentUser={currentUser}
                 hasExam={hasExam}

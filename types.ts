@@ -84,10 +84,21 @@ export interface UniformItem { id: string; name: string; price: number; }
 export interface BookItem { id: string; title: string; classLevel: string; price: number; }
 export interface ClassSpecificFee { classLevel: string; enrollmentFee: number; renewalFee: number; monthlyFee: number; }
 export interface FinancialSettings { currency: string; enrollmentFee: number; renewalFee: number; monthlyFee: number; annualExamFee: number; transferFee: number; monthlyPaymentLimitDay: number; latePaymentPenaltyPercent: number; uniforms: UniformItem[]; books: BookItem[]; classSpecificFees?: ClassSpecificFee[]; enableMobilePayments?: boolean; mobilePaymentConfig?: { mpesaCode?: string; emolaCode?: string; mkeshCode?: string; }; }
-export interface SchoolSettings { schoolName?: string; schoolLogo?: string; nuit?: string; address?: string; contact?: string; email?: string; totalClassrooms: number; studentsPerClass: number; shifts: number; evaluationWeights?: { p1: number; p2: number; }; examWeights?: { internal: number; exam: number; }; }
+export interface SchoolSettings { schoolName?: string; schoolLogo?: string; nuit?: string; address?: string; contact?: string; email?: string; totalClassrooms: number; studentsPerClass: number; shifts: number; lessonDurationMinutes?: number; breakDurationMinutes?: number; evaluationWeights?: { p1: number; p2: number; }; examWeights?: { internal: number; exam: number; }; }
 export type Shift = 'Manhã' | 'Tarde' | 'Noite';
+
+export type DayOfWeek = 'Segunda' | 'Terça' | 'Quarta' | 'Quinta' | 'Sexta' | 'Sábado';
+
+export interface ScheduleEntry {
+  dayOfWeek: DayOfWeek;
+  startTime: string;
+  endTime: string;
+  subjectId: string;
+  teacherId: string;
+}
+
 export interface TeacherAssignment { teacherId: string; subjectIds: string[]; isSubstitute?: boolean; justification?: string; }
-export interface Turma { id: string; name: string; academicYear: number; classLevel: string; shift: Shift; teachers: TeacherAssignment[]; studentIds: string[]; room?: string; }
+export interface Turma { id: string; name: string; academicYear: number; classLevel: string; shift: Shift; teachers: TeacherAssignment[]; studentIds: string[]; room?: string; schedule?: ScheduleEntry[]; }
 export interface DiscussionMessage { id: string; topicId: string; userId: string; content: string; timestamp: string; replyToId?: string; }
 export interface DiscussionTopic { id: string; title: string; createdBy: string; createdAt: string; participantIds: string[]; status: 'Open' | 'Closed'; }
 export interface AppNotification { id: string; userId: string; type: 'message' | 'topic_invite' | 'admin_alert' | 'request_update'; title: string; message: string; read: boolean; timestamp: string; relatedId?: string; }

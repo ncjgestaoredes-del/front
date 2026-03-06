@@ -37,7 +37,7 @@ const SchoolCapacitySettings: React.FC<SchoolCapacitySettingsProps> = ({ setting
                     exam: name === 'examWeight' ? parseInt(value, 10) || 0 : prev.examWeights?.exam || 50
                 }
             }));
-        } else if (['totalClassrooms', 'studentsPerClass', 'shifts'].includes(name)) {
+        } else if (['totalClassrooms', 'studentsPerClass', 'shifts', 'lessonDurationMinutes', 'breakDurationMinutes'].includes(name)) {
             setFormData(prev => ({
                 ...prev,
                 [name]: parseInt(value, 10) || 0
@@ -199,6 +199,32 @@ const SchoolCapacitySettings: React.FC<SchoolCapacitySettingsProps> = ({ setting
                                 onChange={handleChange}
                                 min="1"
                                 max="3"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="lessonDurationMinutes">Duração da Aula (minutos)</label>
+                            <input 
+                                id="lessonDurationMinutes" 
+                                name="lessonDurationMinutes"
+                                type="number" 
+                                value={formData.lessonDurationMinutes || 45} 
+                                onChange={handleChange}
+                                min="15"
+                                max="180"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="breakDurationMinutes">Duração do Intervalo (minutos)</label>
+                            <input 
+                                id="breakDurationMinutes" 
+                                name="breakDurationMinutes"
+                                type="number" 
+                                value={formData.breakDurationMinutes || 15} 
+                                onChange={handleChange}
+                                min="0"
+                                max="60"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                             />
                         </div>
