@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Student, AcademicYear, SchoolSettings, Turma, FinancialSettings, AppNotification, UserRole, Grade, AttendanceRecord, Subject, PaymentRecord, BehaviorNote, DayOfWeek } from '../types';
+import { User, Student, AcademicYear, SchoolSettings, Turma, FinancialSettings, AppNotification, UserRole, Grade, AttendanceRecord, Subject, PaymentRecord, BehaviorNote } from '../types';
 import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, ClockIcon, ChartBarIcon, BookOpenIcon, PrinterIcon, FilterIcon, DevicePhoneMobileIcon } from './icons/IconComponents';
 import Sidebar from './Sidebar';
 import Header from './Header';
@@ -57,8 +57,6 @@ const monthsList = [
     { val: 7, name: 'Julho' }, { val: 8, name: 'Agosto' }, { val: 9, name: 'Setembro' },
     { val: 10, name: 'Outubro' }, { val: 11, name: 'Novembro' }, { val: 12, name: 'Dezembro' }
 ];
-
-const DAYS: DayOfWeek[] = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
 // FUNÇÃO PARA CALCULAR O SALDO DO ALUNO
 const calculateStudentBalance = (student: Student, year: number, financialSettings: FinancialSettings): number => {
@@ -297,9 +295,8 @@ const StudentInfoCard: React.FC<{
     financialSettings: FinancialSettings;
     onOpenStatement: (s: Student) => void;
     onOpenPayment: (s: Student) => void;
-    users?: User[];
-}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement, onOpenPayment, users }) => {
-    const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior' | 'discipline' | 'schedule'>('grades');
+}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement, onOpenPayment }) => {
+    const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior' | 'discipline'>('grades');
     
     // Estados para filtros de assiduidade
     const [attMonthFilter, setAttMonthFilter] = useState<string>('all');
@@ -411,46 +408,6 @@ const StudentInfoCard: React.FC<{
         return calculateStudentBalance(student, selectedYear, financialSettings);
     }, [student, selectedYear, financialSettings]);
 
-    const timeSlots = useMemo(() => {
-        if (!activeTurma) return [];
-        const slots: { start: string, end: string }[] = [];
-        let startTime = '';
-        let numLessons = 6;
-
-        if (activeTurma.shift === 'Manhã') {
-            startTime = '07:30';
-        } else if (activeTurma.shift === 'Tarde') {
-            startTime = '13:00';
-        } else {
-            startTime = '18:00';
-            numLessons = 5;
-        }
-
-        const lessonDuration = schoolSettings.lessonDurationMinutes || 45;
-        const breakDuration = schoolSettings.breakDurationMinutes || 15;
-
-        let currentMinutes = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1]);
-
-        for (let i = 0; i < numLessons; i++) {
-            const startH = Math.floor(currentMinutes / 60).toString().padStart(2, '0');
-            const startM = (currentMinutes % 60).toString().padStart(2, '0');
-            const startStr = `${startH}:${startM}`;
-
-            currentMinutes += lessonDuration;
-
-            const endH = Math.floor(currentMinutes / 60).toString().padStart(2, '0');
-            const endM = (currentMinutes % 60).toString().padStart(2, '0');
-            const endStr = `${endH}:${endM}`;
-
-            slots.push({ start: startStr, end: endStr });
-
-            if (i === 2) {
-                currentMinutes += breakDuration;
-            }
-        }
-        return slots;
-    }, [activeTurma, schoolSettings.lessonDurationMinutes, schoolSettings.breakDurationMinutes]);
-
     const hasDebt = studentBalance > 0;
 
     const formatCurrency = (val: number) => {
@@ -524,7 +481,6 @@ const StudentInfoCard: React.FC<{
                     { id: 'attendance', label: 'Assiduidade', icon: <CalendarIcon className="w-4 h-4" /> },
                     { id: 'discipline', label: 'Ocorrências', icon: <ExclamationTriangleIcon className="w-4 h-4" /> },
                     { id: 'behavior', label: 'Conduta', icon: <StarIcon className="w-4 h-4" /> },
-                    { id: 'schedule', label: 'Horário', icon: <CalendarIcon className="w-4 h-4" /> },
                     { id: 'financial', label: 'Financeiro', icon: <CurrencyDollarIcon className="w-4 h-4" /> }
                 ].map(tab => (
                     <button 
@@ -825,79 +781,6 @@ const StudentInfoCard: React.FC<{
                     </div>
                 )}
 
-                {activeTab === 'schedule' && (
-                    <div className="space-y-6 animate-fade-in">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-6">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
-                                <CalendarIcon className="w-4 h-4 mr-2 text-indigo-600" />
-                                Horário Semanal de Aulas
-                            </h4>
-                            {activeTurma && (
-                                <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full uppercase tracking-widest">
-                                    Turma: {activeTurma.name} • {activeTurma.shift}
-                                </span>
-                            )}
-                        </div>
-
-                        {activeTurma && activeTurma.schedule && activeTurma.schedule.length > 0 ? (
-                            <div className="overflow-x-auto border rounded-2xl shadow-sm bg-white">
-                                <table className="min-w-full divide-y divide-gray-200 border-collapse">
-                                    <thead className="bg-slate-900">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left text-[10px] font-black text-indigo-200 uppercase tracking-widest border-r border-white/10 w-32">Horário</th>
-                                            {DAYS.map(day => (
-                                                <th key={day} className="px-4 py-3 text-center text-[10px] font-black text-white uppercase tracking-widest min-w-[120px]">
-                                                    {day}
-                                                </th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {timeSlots.map((slot, idx) => (
-                                            <tr key={idx} className="hover:bg-indigo-50/30 transition-colors">
-                                                <td className="px-4 py-4 whitespace-nowrap border-r bg-slate-50">
-                                                    <div className="text-xs font-black text-slate-900">{slot.start}</div>
-                                                    <div className="text-[9px] text-slate-400 font-bold uppercase">até {slot.end}</div>
-                                                </td>
-                                                {DAYS.map(day => {
-                                                    const entry = activeTurma.schedule?.find(e => e.dayOfWeek === day && e.startTime === slot.start);
-                                                    const subject = entry ? subjects.find((s: Subject) => s.id === entry.subjectId) : null;
-                                                    const teacher = entry ? (users || []).find((u: User) => u.id === entry.teacherId) : null;
-
-                                                    return (
-                                                        <td key={day} className="px-2 py-2 text-center border-l first:border-l-0">
-                                                            {entry ? (
-                                                                <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-100">
-                                                                    <div className="text-[11px] font-black text-indigo-900 leading-tight mb-1">
-                                                                        {subject?.name || 'Disciplina'}
-                                                                    </div>
-                                                                    <div className="text-[9px] text-indigo-500 font-bold truncate uppercase">
-                                                                        {teacher?.name.split(' ')[0] || 'N/A'}
-                                                                    </div>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="h-10 flex items-center justify-center">
-                                                                    <div className="w-1 h-1 bg-slate-100 rounded-full"></div>
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                    );
-                                                })}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ) : (
-                            <div className="py-20 text-center bg-slate-50 rounded-[3rem] border border-dashed border-slate-200">
-                                <CalendarIcon className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-                                <h5 className="text-lg font-black text-slate-800 uppercase tracking-tight">Horário não disponível</h5>
-                                <p className="text-sm text-slate-400 font-medium max-w-xs mx-auto">O horário para esta turma ainda não foi publicado pela secretaria.</p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
                 {activeTab === 'behavior' && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 animate-fade-in">
                         {['1º Trimestre', '2º Trimestre', '3º Trimestre'].map(p => {
@@ -928,7 +811,7 @@ const StudentInfoCard: React.FC<{
 );
 };
 
-const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdateCurrentUser, students, onStudentsChange, academicYears, schoolSettings, turmas, financialSettings, activeView = 'painel', setActiveView, users }) => {
+const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdateCurrentUser, students, onStudentsChange, academicYears, schoolSettings, turmas, financialSettings, activeView = 'painel', setActiveView }) => {
     const myStudents = useMemo(() => students.filter(s => String(s.guardianName).trim().toLowerCase() === String(user.name).trim().toLowerCase()), [students, user.name]);
     
     const availableYears = useMemo(() => {
@@ -1012,7 +895,6 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                                     financialSettings={financialSettings}
                                     onOpenStatement={(s) => { setStatementStudent(s); setIsStatementOpen(true); }}
                                     onOpenPayment={(s) => { setPaymentStudent(s); setIsPaymentOpen(true); }}
-                                    users={users}
                                 />
                             ))
                         ) : (
