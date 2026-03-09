@@ -77,9 +77,9 @@ const ClassManagement: React.FC<ClassManagementProps> = ({
         const teachersSet = new Set<string>();
         activeTurmas.forEach(t => {
             t.teachers?.forEach(assign => teachersSet.add(assign.teacherId));
-            // @ts-ignore legacy
+            // @ts-expect-error legacy
             if(t.teacherIds) t.teacherIds.forEach(id => teachersSet.add(id));
-            // @ts-ignore legacy
+            // @ts-expect-error legacy
             if(t.teacherId) teachersSet.add(t.teacherId);
         });
         const totalTeachers = teachersSet.size;
