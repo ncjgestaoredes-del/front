@@ -27,7 +27,7 @@ const ScheduleManagement: React.FC<ScheduleManagementProps> = ({ turma, subjects
 
     const timeSlots = useMemo(() => {
         const slots: { start: string, end: string }[] = [];
-        let startTime = '';
+        let startTime = '07:30';
         let numLessons = 6;
 
         if (turma.shift === 'Manhã') {

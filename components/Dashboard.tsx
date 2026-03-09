@@ -85,7 +85,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
       if (user.role === UserRole.PROFESSOR) {
           const myTurmas = turmas.filter(t =>
               t.teachers?.some(teach => teach.teacherId === user.id) ||
-              // @ts-ignore legacy
+              // @ts-expect-error legacy
               t.teacherIds?.includes(user.id) || t.teacherId === user.id
           );
           const myStudentIds = new Set(myTurmas.flatMap(t => t.studentIds));

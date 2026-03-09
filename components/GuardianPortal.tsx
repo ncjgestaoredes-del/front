@@ -6,6 +6,7 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import { View } from './Dashboard';
 import MobilePaymentModal from './MobilePaymentModal';
+import ScheduleManagement from './ScheduleManagement';
 
 interface GuardianPortalProps {
   user: User;
@@ -135,13 +136,12 @@ const StatementModal: React.FC<{
     year: number; 
     financialSettings: FinancialSettings;
 }> = ({ isOpen, onClose, student, year, financialSettings }) => {
-    if (!isOpen || !student) return null;
-
     const formatCurrency = (val: number) => {
         return val.toLocaleString('pt-MZ', { style: 'currency', currency: financialSettings.currency || 'MZN' });
     };
 
     const ledger = useMemo(() => {
+        if (!student) return [];
         const items: { date: string; desc: string; debit: number; credit: number }[] = [];
         const startMonth = 2;
         const now = new Date();
@@ -230,7 +230,17 @@ const StatementModal: React.FC<{
         return items.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     }, [student, year, financialSettings]);
 
-    let runningBalance = 0;
+    const ledgerWithBalance = useMemo(() => {
+        const result: { date: string; desc: string; debit: number; credit: number; balance: number }[] = [];
+        let currentBalance = 0;
+        for (const item of ledger) {
+            currentBalance += (item.debit - item.credit);
+            result.push({ ...item, balance: currentBalance });
+        }
+        return result;
+    }, [ledger]);
+
+    if (!isOpen || !student) return null;
 
     return (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -256,16 +266,15 @@ const StatementModal: React.FC<{
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {ledger.map((item, i) => {
-                                runningBalance += (item.debit - item.credit);
+                            {ledgerWithBalance.map((item, i) => {
                                 return (
                                     <tr key={i} className="hover:bg-slate-50 transition-colors">
                                         <td className="py-4 text-slate-500 whitespace-nowrap">{new Date(item.date).toLocaleDateString()}</td>
                                         <td className="py-4 font-bold text-slate-700">{item.desc}</td>
                                         <td className="py-4 text-right text-rose-600 font-bold">{item.debit > 0 ? formatCurrency(item.debit) : '-'}</td>
                                         <td className="py-4 text-right text-emerald-600 font-bold">{item.credit > 0 ? formatCurrency(item.credit) : '-'}</td>
-                                        <td className={`py-4 text-right font-black ${runningBalance > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                                            {formatCurrency(runningBalance)}
+                                        <td className={`py-4 text-right font-black ${item.balance > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                            {formatCurrency(item.balance)}
                                         </td>
                                     </tr>
                                 );
@@ -276,8 +285,8 @@ const StatementModal: React.FC<{
                 <footer className="p-8 bg-slate-900 text-white flex justify-between items-center">
                     <div>
                         <p className="text-[10px] font-black uppercase text-indigo-300 mb-1">Saldo Corrente</p>
-                        <p className="text-3xl font-black">{formatCurrency(Math.abs(runningBalance))}</p>
-                        <p className="text-[10px] uppercase font-bold">{runningBalance > 0 ? 'Dívida a Regularizar' : 'Situação Regularizada'}</p>
+                        <p className="text-3xl font-black">{formatCurrency(Math.abs(ledgerWithBalance[ledgerWithBalance.length - 1]?.balance || 0))}</p>
+                        <p className="text-[10px] uppercase font-bold">{(ledgerWithBalance[ledgerWithBalance.length - 1]?.balance || 0) > 0 ? 'Dívida a Regularizar' : 'Situação Regularizada'}</p>
                     </div>
                     <button onClick={onClose} className="bg-indigo-600 px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all">Fechar Extrato</button>
                 </footer>
@@ -295,8 +304,10 @@ const StudentInfoCard: React.FC<{
     financialSettings: FinancialSettings;
     onOpenStatement: (s: Student) => void;
     onOpenPayment: (s: Student) => void;
-}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement, onOpenPayment }) => {
-    const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior' | 'discipline'>('grades');
+    users: User[];
+    currentUser: User;
+}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement, onOpenPayment, users, currentUser }) => {
+    const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior' | 'discipline' | 'schedule'>('grades');
     
     // Estados para filtros de assiduidade
     const [attMonthFilter, setAttMonthFilter] = useState<string>('all');
@@ -478,6 +489,7 @@ const StudentInfoCard: React.FC<{
                     <div className="flex bg-slate-50 border-b overflow-x-auto no-scrollbar p-2 gap-2">
                 {[
                     { id: 'grades', label: 'Notas', icon: <ChartBarIcon className="w-4 h-4" /> },
+                    { id: 'schedule', label: 'Horário', icon: <CalendarIcon className="w-4 h-4" /> },
                     { id: 'attendance', label: 'Assiduidade', icon: <CalendarIcon className="w-4 h-4" /> },
                     { id: 'discipline', label: 'Ocorrências', icon: <ExclamationTriangleIcon className="w-4 h-4" /> },
                     { id: 'behavior', label: 'Conduta', icon: <StarIcon className="w-4 h-4" /> },
@@ -498,6 +510,17 @@ const StudentInfoCard: React.FC<{
             </div>
 
             <div className="p-4 md:p-10">
+                {activeTab === 'schedule' && activeTurma && (
+                    <ScheduleManagement 
+                        turma={activeTurma}
+                        subjects={subjects}
+                        users={users}
+                        onUpdateTurma={() => {}} // Read-only for guardians
+                        currentUser={currentUser}
+                        settings={schoolSettings}
+                    />
+                )}
+
                 {activeTab === 'grades' && (
                     <div className="overflow-x-auto -mx-4 md:mx-0 rounded-2xl border border-slate-100">
                         <table className="min-w-full text-[10px] border-collapse">
@@ -811,7 +834,7 @@ const StudentInfoCard: React.FC<{
 );
 };
 
-const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdateCurrentUser, students, onStudentsChange, academicYears, schoolSettings, turmas, financialSettings, activeView = 'painel', setActiveView }) => {
+const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdateCurrentUser, students, onStudentsChange, academicYears, schoolSettings, turmas, financialSettings, activeView = 'painel', setActiveView, users }) => {
     const myStudents = useMemo(() => students.filter(s => String(s.guardianName).trim().toLowerCase() === String(user.name).trim().toLowerCase()), [students, user.name]);
     
     const availableYears = useMemo(() => {
@@ -895,6 +918,8 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                                     financialSettings={financialSettings}
                                     onOpenStatement={(s) => { setStatementStudent(s); setIsStatementOpen(true); }}
                                     onOpenPayment={(s) => { setPaymentStudent(s); setIsPaymentOpen(true); }}
+                                    users={users || []}
+                                    currentUser={user}
                                 />
                             ))
                         ) : (
