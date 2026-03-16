@@ -140,7 +140,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
         const statusCounts = { Ativo: 0, Transferido: 0, Inativo: 0 };
         const admissionTypes = { novos: 0, renovacoes: 0 };
         let neeCount = 0;
-        let financial = { paid: 0, late: 0 };
+        const financial = { paid: 0, late: 0 };
         const currentMonth = new Date().getMonth() + 1;
         visibleStudents.forEach(s => {
             const matriculaPayment = s.payments?.find(p => p.academicYear === selectedYear && p.type === 'Matrícula');

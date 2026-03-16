@@ -105,7 +105,7 @@ const FinancialSetup: React.FC<FinancialSetupProps> = ({ settings, onSettingsCha
 
             // Check if class already exists and update it, otherwise add new
             const existingIndex = localSettings.classSpecificFees?.findIndex(c => c.classLevel === newClassFeeLevel);
-            let updatedFees = localSettings.classSpecificFees ? [...localSettings.classSpecificFees] : [];
+            const updatedFees = localSettings.classSpecificFees ? [...localSettings.classSpecificFees] : [];
 
             if (existingIndex !== undefined && existingIndex >= 0) {
                 updatedFees[existingIndex] = { 

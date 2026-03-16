@@ -224,132 +224,26 @@ export const calculateStudentFinancialSummary = (
     financialSettings: FinancialSettings,
     targetYear?: number // If provided, calculates only for this year. Otherwise, calculates all-time.
 ): StudentFinancialSummary => {
+    const ledger = getStudentFinancialLedger(student, academicYears, financialSettings, targetYear);
+    
     let totalObligation = 0;
     let totalPaid = 0;
 
-    const profile = student.financialProfile || { status: 'Normal' };
-    const matriculationDate = new Date(student.matriculationDate);
-    const matriculationYear = matriculationDate.getFullYear();
-    const now = new Date();
-
-    // 1. Calculate Obligations
-    academicYears.forEach(ay => {
-        // If targetYear is provided, only process that year
-        if (targetYear && ay.year !== targetYear) return;
-        
-        // Only process years from matriculation onwards
-        if (ay.year < matriculationYear) return;
-
-        // Base Fees (Matrícula/Renovação)
-        let enrollmentFee = financialSettings.enrollmentFee;
-        let renewalFee = financialSettings.renewalFee;
-        let monthlyFee = financialSettings.monthlyFee;
-
-        // Class specific fees
-        if (student.desiredClass) {
-            const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
-            if (specific) {
-                enrollmentFee = specific.enrollmentFee;
-                renewalFee = specific.renewalFee;
-                monthlyFee = specific.monthlyFee;
-            }
-        }
-
-        // Apply profile discounts
-        if (profile.status === 'Isento Total') {
-            enrollmentFee = 0;
-            renewalFee = 0;
-            monthlyFee = 0;
-        } else if (profile.status === 'Desconto Parcial') {
-            const discount = (profile.discountPercentage || 0) / 100;
-            if (profile.affectedTypes?.includes('Matrícula')) enrollmentFee *= (1 - discount);
-            if (profile.affectedTypes?.includes('Renovação')) renewalFee *= (1 - discount);
-            if (profile.affectedTypes?.includes('Mensalidade')) monthlyFee *= (1 - discount);
-        }
-
-        if (ay.year === matriculationYear) {
-            // In matriculation year, student owes Enrollment fee
-            totalObligation += enrollmentFee;
-            totalObligation += financialSettings.annualExamFee || 0;
-        } else if (ay.year > matriculationYear) {
-            // In subsequent years, student owes Renewal fee
-            totalObligation += renewalFee;
-            totalObligation += financialSettings.annualExamFee || 0;
-        }
-
-        // Monthly Fees
-        const startMonth = ay.startMonth || 2;
-        const endMonth = ay.endMonth || 11;
-        const matriculationMonth = ay.year === matriculationYear ? matriculationDate.getMonth() + 1 : 1;
-
-        for (let m = startMonth; m <= endMonth; m++) {
-            // Don't charge for months before matriculation in the first year
-            if (ay.year === matriculationYear && m < matriculationMonth) continue;
-            
-            // Don't charge for future months in the current year
-            if (ay.year === now.getFullYear() && m > (now.getMonth() + 1)) continue;
-            
-            // Don't charge for future years
-            if (ay.year > now.getFullYear()) continue;
-
-            // Lógica de Suspensão: Se suspenso, não cobrar meses APÓS a suspensão
-            if (student.status === 'Suspenso' && student.suspensionDate) {
-                const suspDate = new Date(student.suspensionDate);
-                if (ay.year === suspDate.getFullYear() && m > (suspDate.getMonth() + 1)) continue;
-                if (ay.year > suspDate.getFullYear()) continue;
-            }
-
-            totalObligation += monthlyFee;
-
-            // Penalties
-            const limitDay = financialSettings.monthlyPaymentLimitDay || 10;
-            const penaltyPercent = financialSettings.latePaymentPenaltyPercent || 0;
-            const penaltyDate = new Date(ay.year, m - 1, limitDay + 1);
-
-            if (now >= penaltyDate && penaltyPercent > 0 && profile.status !== 'Sem Multa' && profile.status !== 'Isento Total') {
-                const paymentsForMonth = student.payments?.filter((p: PaymentRecord) => 
-                    p.academicYear === ay.year && 
-                    (p.type === 'Mensalidade' || p.type === 'Matrícula' || p.type === 'Renovação') && 
-                    p.referenceMonth === m
-                ) || [];
-
-                const limitDateStr = new Date(ay.year, m - 1, limitDay).toISOString().split('T')[0];
-                const paidOnTime = paymentsForMonth.reduce((acc: number, p: PaymentRecord) => p.date <= limitDateStr ? acc + p.amount : acc, 0);
-
-                if (paidOnTime < (monthlyFee - 1)) {
-                    totalObligation += (monthlyFee * (penaltyPercent / 100));
-                }
-            }
-        }
-    });
-
-    // Extra Charges
-    student.extraCharges?.forEach((charge: ExtraCharge) => {
-        const chargeYear = new Date(charge.date).getFullYear();
-        if (targetYear && chargeYear !== targetYear) return;
-        totalObligation += charge.amount;
-    });
-
-    // 2. Calculate Payments
-    student.payments?.forEach((p: PaymentRecord) => {
-        if (targetYear && p.academicYear !== targetYear) return;
-        totalPaid += p.amount;
+    ledger.forEach(item => {
+        totalObligation += item.debit;
+        totalPaid += item.credit;
     });
 
     const balance = totalPaid - totalObligation;
     
-    // Grace period for new students: if matriculated this month and no payments yet, balance is 0
-    const isNewThisMonth = matriculationYear === now.getFullYear() && matriculationDate.getMonth() === now.getMonth();
-    const effectiveBalance = (totalPaid === 0 && isNewThisMonth) ? 0 : balance;
-
     let status: 'Regular' | 'Devedor' | 'Isento' = 'Regular';
-    if (profile.status === 'Isento Total') status = 'Isento';
-    else if (effectiveBalance < -50) status = 'Devedor';
+    if (student.financialProfile?.status === 'Isento Total') status = 'Isento';
+    else if (balance < -50) status = 'Devedor';
 
     return {
         totalObligation,
         totalPaid,
-        balance: effectiveBalance,
+        balance,
         status
     };
 };

@@ -1,7 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Student, StudentStatus, User, UserRole, AppNotification, BehaviorNote, FinancialSettings, AcademicYear, PaymentType } from '../types';
-import { calculateStudentFinancialSummary, formatCurrency } from '../src/financialUtils';
 import AddStudentModal from './AddStudentModal';
 import EditStudentModal from './EditStudentModal';
 import RegisterOccurrenceModal from './RegisterOccurrenceModal';
@@ -111,22 +110,154 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
   };
 
   // --- Financial Calculation Logic ---
-  const getStudentBalance = React.useCallback((student: Student) => {
+  const calculateStudentBalance = useCallback((student: Student) => {
       // Safety check for dependencies
       if (!financialSettings || !academicYears || academicYears.length === 0) {
           return { balance: 0, isDebtor: false };
       }
 
-      const summary = calculateStudentFinancialSummary(student, academicYears, financialSettings);
-      return {
-          balance: summary.balance,
-          isDebtor: summary.status === 'Devedor'
-      };
+      try {
+          const activeYearObj = academicYears.find(y => y.status === 'Em Curso') || academicYears[0];
+          if (!activeYearObj) return { balance: 0, isDebtor: false };
+          
+          const currentYear = activeYearObj.year;
+
+          // 1. Calcular Créditos (O que foi pago neste ano letivo)
+          const totalPaid = student.payments
+              ?.filter(p => p.academicYear === currentYear)
+              .reduce((acc, curr) => acc + (curr.amount || 0), 0) || 0;
+
+          // --- FIX: Recém Matriculados ---
+          // Se o aluno foi matriculado neste ano/mês e ainda não fez pagamentos,
+          // consideramos saldo 0 visualmente para não indicar dívida imediata antes do ato da matrícula financeira.
+          const matDate = new Date(student.matriculationDate);
+          const now = new Date();
+          // Verifica se a matrícula é do ano corrente e se é recente (mesmo mês)
+          const isNewThisMonth = matDate.getFullYear() === now.getFullYear() && matDate.getMonth() === now.getMonth();
+          
+          if (totalPaid === 0 && isNewThisMonth) {
+              return { balance: 0, isDebtor: false };
+          }
+          // -------------------------------
+
+          // 2. Calcular Débitos (Obrigações até o momento)
+          let totalObligation = 0;
+          const profile = student.financialProfile || { status: 'Normal' };
+          
+          // Determine taxas base (considerando descontos)
+          const getFee = (type: PaymentType, baseValue: number) => {
+              if (profile.status === 'Isento Total') return 0;
+              if (profile.status === 'Desconto Parcial' && profile.affectedTypes?.includes(type)) {
+                  return baseValue * (1 - (profile.discountPercentage || 0) / 100);
+              }
+              return baseValue;
+          };
+
+          // Valores Base (Classe Específica ou Global)
+          let monthlyFeeBase = financialSettings.monthlyFee;
+          let enrollmentFeeBase = financialSettings.enrollmentFee;
+          let renewalFeeBase = financialSettings.renewalFee;
+
+          if (student.desiredClass && financialSettings.classSpecificFees) {
+              const specific = financialSettings.classSpecificFees.find(c => c.classLevel === student.desiredClass);
+              if (specific) {
+                  monthlyFeeBase = specific.monthlyFee;
+                  enrollmentFeeBase = specific.enrollmentFee;
+                  renewalFeeBase = specific.renewalFee;
+              }
+          }
+
+          // A. Matrícula / Renovação
+          const matriculationYear = matDate.getFullYear();
+          if (!isNaN(matriculationYear)) {
+              if (matriculationYear === currentYear) {
+                  totalObligation += getFee('Matrícula', enrollmentFeeBase);
+                  totalObligation += financialSettings.annualExamFee || 0;
+              } else if (matriculationYear < currentYear && student.status !== 'Inativo') {
+                  totalObligation += getFee('Renovação', renewalFeeBase);
+                  totalObligation += financialSettings.annualExamFee || 0;
+              }
+          }
+
+          // B. Mensalidades (Até o mês atual)
+          const currentMonth = now.getMonth() + 1;
+          const currentDay = now.getDate();
+          const startMonth = activeYearObj.startMonth || 2;
+          const endMonth = activeYearObj.endMonth || 11;
+          
+          // Ajustar início da cobrança com base na data de entrada
+          let effectiveStartMonth = startMonth;
+          if (matDate.getFullYear() === currentYear) {
+              effectiveStartMonth = Math.max(startMonth, matDate.getMonth() + 1);
+          }
+
+          const checkLimit = (activeYearObj.year === now.getFullYear()) 
+              ? Math.min(currentMonth, endMonth) 
+              : endMonth; // Se for ano passado, cobra tudo. Se futuro, nada.
+
+          if (currentYear > now.getFullYear()) {
+              // Ano futuro não gera dívida de mensalidade vencida ainda
+          } else {
+              for (let m = effectiveStartMonth; m <= checkLimit; m++) {
+                  // Lógica de Suspensão: Se suspenso, não cobrar meses APÓS a suspensão
+                  if (student.status === 'Suspenso' && student.suspensionDate) {
+                      const suspDate = new Date(student.suspensionDate);
+                      if (currentYear === suspDate.getFullYear() && m > (suspDate.getMonth() + 1)) {
+                          continue; 
+                      }
+                      if (currentYear > suspDate.getFullYear()) {
+                          continue;
+                      }
+                  }
+
+                  let monthlyAmount = getFee('Mensalidade', monthlyFeeBase);
+                  
+                  // Verificar Multa se estiver atrasado
+                  // Se o ano analisado é passado, todos os meses estão atrasados
+                  const isLate = (currentYear < now.getFullYear()) || (m < currentMonth || (m === currentMonth && currentDay > (financialSettings.monthlyPaymentLimitDay || 10)));
+
+                  if (isLate) {
+                      if (financialSettings.latePaymentPenaltyPercent > 0 && profile.status !== 'Sem Multa' && profile.status !== 'Isento Total') {
+                          monthlyAmount += (monthlyAmount * (financialSettings.latePaymentPenaltyPercent / 100));
+                      }
+                  }
+                  
+                  totalObligation += monthlyAmount;
+              }
+          }
+
+          // C. Taxas Extras e Danos (Registrados no perfil do aluno)
+          if (student.extraCharges) {
+              student.extraCharges.forEach(charge => {
+                  const chargeDate = new Date(charge.date);
+                  if (chargeDate.getFullYear() === currentYear && !charge.isPaid) {
+                      totalObligation += charge.amount;
+                  }
+              });
+          }
+
+          // D. Compras Loja e Débitos On-demand
+          student.payments?.filter(p => p.academicYear === currentYear).forEach(p => {
+              if (['Uniforme', 'Material', 'Taxa de Transferência'].includes(p.type)) {
+                  totalObligation += p.amount;
+              }
+          });
+          
+          const balance = totalPaid - totalObligation;
+          // Tolerância de 50 meticais
+          return { 
+              balance, 
+              isDebtor: balance < -50 
+          };
+      } catch (error) {
+          console.error("Erro ao calcular saldo:", error);
+          return { balance: 0, isDebtor: false };
+      }
   }, [financialSettings, academicYears]);
 
   const handleSuspendStudent = (student: Student) => {
       // 1. Check Debts
-      const { isDebtor, balance } = getStudentBalance(student);
+      const { isDebtor, balance } = calculateStudentBalance(student);
       
       if (isDebtor) {
           alert(`BLOQUEADO: Não é possível trancar a matrícula.\n\nO aluno possui uma dívida estimada de ${Math.abs(balance).toLocaleString()} MT.\nPor favor, regularize a situação financeira antes de suspender.`);
@@ -151,34 +282,41 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
       return val.toLocaleString('pt-MZ', { style: 'currency', currency: financialSettings?.currency || 'MZN' });
   };
 
+  const studentsWithBalance = useMemo(() => {
+    return students.map(student => ({
+      student,
+      ...calculateStudentBalance(student)
+    }));
+  }, [students, calculateStudentBalance]);
+
   const filteredStudents = useMemo(() => {
-    let currentStudents = students;
+    let current = studentsWithBalance;
 
     // 1. Status Filter
     if (statusFilter !== 'Todos') {
-      currentStudents = currentStudents.filter(student => student.status === statusFilter);
+      current = current.filter(item => item.student.status === statusFilter);
     }
     
     // 2. Financial Filter
-    if (financialFilter !== 'Todos' && financialSettings && academicYears) {
-        currentStudents = currentStudents.filter(student => {
-            const { isDebtor } = getStudentBalance(student);
-            if (financialFilter === 'Devedores (Saldo Negativo)') return isDebtor;
-            if (financialFilter === 'Em Dia / Credores') return !isDebtor;
+    if (financialFilter !== 'Todos') {
+        current = current.filter(item => {
+            if (financialFilter === 'Devedores (Saldo Negativo)') return item.isDebtor;
+            if (financialFilter === 'Em Dia / Credores') return !item.isDebtor;
             return true;
         });
     }
 
     // 3. Search Filter
     if (searchTerm) {
-      currentStudents = currentStudents.filter(student =>
-        student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.desiredClass.toLowerCase().includes(searchTerm.toLowerCase())
+      const search = searchTerm.toLowerCase();
+      current = current.filter(item =>
+        item.student.name.toLowerCase().includes(search) ||
+        item.student.id.toLowerCase().includes(search) ||
+        item.student.desiredClass.toLowerCase().includes(search)
       );
     }
-    return currentStudents;
-  }, [searchTerm, statusFilter, financialFilter, students, financialSettings, academicYears, getStudentBalance]);
+    return current;
+  }, [searchTerm, statusFilter, financialFilter, studentsWithBalance]);
 
   return (
     <>
@@ -282,15 +420,12 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
                 <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Nome do Aluno</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Classe</th>
-                {financialSettings && <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-900 uppercase tracking-wider bg-gray-100">Saldo Final</th>}
                 <th scope="col" className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
                 <th scope="col" className="relative px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredStudents.map((student) => {
-                  const { balance, isDebtor } = getStudentBalance(student);
-                  
+              {filteredStudents.map(({ student, isDebtor }) => {
                   return (
                     <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${isDebtor ? 'bg-red-50 hover:bg-red-100' : ''}`}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-700">{student.id}</td>
@@ -305,15 +440,6 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.desiredClass}</td>
                       
-                      {/* Coluna Saldo Final */}
-                      {financialSettings && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono">
-                              <span className={`px-2 py-1 rounded font-bold ${isDebtor ? 'text-red-600 bg-white border border-red-200' : 'text-green-600 bg-green-50 border border-green-200'}`}>
-                                  {formatCurrency(balance)}
-                              </span>
-                          </td>
-                      )}
-
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
                         <StatusBadge status={student.status} />
                       </td>
@@ -352,7 +478,7 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
               })}
               {filteredStudents.length === 0 && (
                   <tr>
-                      <td colSpan={financialSettings ? 6 : 5} className="text-center py-10 text-gray-500">
+                      <td colSpan={5} className="text-center py-10 text-gray-500">
                           Nenhum aluno encontrado com os filtros aplicados.
                       </td>
                   </tr>
@@ -360,11 +486,6 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
             </tbody>
           </table>
         </div>
-        {filteredStudents.length > 0 && financialSettings && (
-            <div className="mt-4 text-xs text-gray-500 text-right">
-                * O Saldo Final é calculado subtraindo o total de obrigações (Matrícula, Mensalidades vencidas, Taxas) do total pago no ano letivo corrente. Valor negativo indica dívida.
-            </div>
-        )}
       </div>
     </>
   );
