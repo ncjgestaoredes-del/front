@@ -4,6 +4,7 @@ import { Student, FinancialSettings, AcademicYear, PaymentRecord, SchoolSettings
 import { CheckCircleIcon, CloseIcon, CalendarIcon, TrashIcon, ClockIcon, ExclamationTriangleIcon, EditIcon, PrinterIcon } from './icons/IconComponents';
 import { printReceipt, printStudentStatement } from './ReceiptUtils';
 import EditPaymentModal from './EditPaymentModal';
+import { calculateStudentFinancialSummary, formatCurrency } from '../src/financialUtils';
 
 interface FinancialRecordsProps {
     students: Student[];
@@ -66,6 +67,17 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
             .reduce((acc, curr) => acc + curr.amount, 0);
     };
 
+    const getStudentBalance = React.useCallback((student: Student) => {
+        if (!activeYear || !financialSettings || !academicYears || academicYears.length === 0) {
+            return { balance: 0, status: 'Regular' };
+        }
+        const summary = calculateStudentFinancialSummary(student, academicYears, financialSettings);
+        return {
+            balance: summary.balance,
+            status: summary.status
+        };
+    }, [activeYear, financialSettings, academicYears]);
+
     const getCurrencyLocale = (currency: string) => {
         switch(currency) {
             case 'MZN': return 'pt-MZ';
@@ -107,7 +119,7 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
 
     const handlePrintStatement = () => {
         if (!selectedStudent || !activeYear) return;
-        printStudentStatement(selectedStudent, Number(activeYear), financialSettings, schoolSettings);
+        printStudentStatement(selectedStudent, Number(activeYear), financialSettings, schoolSettings, academicYears);
     };
 
     const handleEditPayment = (payment: PaymentRecord) => {
@@ -431,6 +443,7 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[200px]">Nome</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Classe</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Pago ({activeYear})</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Saldo Final</th>
                             <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase sticky right-0 bg-gray-50">Ações</th>
                         </tr>
                     </thead>
@@ -455,6 +468,16 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
                                 <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{student.desiredClass}</td>
                                 <td className="px-6 py-4 text-right text-sm font-bold text-green-600 whitespace-nowrap">
                                     {formatPrice(getStudentTotalPaid(student))}
+                                </td>
+                                <td className="px-6 py-4 text-right text-sm font-bold whitespace-nowrap">
+                                    {(() => {
+                                        const { balance, status } = getStudentBalance(student);
+                                        return (
+                                            <span className={status === 'Devedor' ? 'text-red-600' : 'text-green-600'}>
+                                                {formatCurrency(balance, financialSettings.currency)}
+                                            </span>
+                                        );
+                                    })()}
                                 </td>
                                 <td className="px-6 py-4 text-center sticky right-0 bg-white shadow-[-5px_0_10px_-5px_rgba(0,0,0,0.1)] md:shadow-none">
                                     <button 

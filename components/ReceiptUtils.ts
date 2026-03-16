@@ -1,5 +1,6 @@
 
-import { PaymentRecord, SchoolSettings, Student, Subject, Turma, FinancialSettings, ExtraCharge, Grade, ExamResult } from "../types";
+import { PaymentRecord, SchoolSettings, Student, Subject, Turma, FinancialSettings, ExtraCharge, Grade, ExamResult, AcademicYear } from "../types";
+import { getStudentFinancialLedger, LedgerItem } from "../src/financialUtils";
 
 export interface PrintOptions {
     period: '1º Trimestre' | '2º Trimestre' | '3º Trimestre' | 'Situação Anual';
@@ -396,9 +397,9 @@ export const printStudentStatement = (
     student: Student,
     academicYear: number,
     financialSettings: FinancialSettings,
-    schoolSettings: SchoolSettings
+    schoolSettings: SchoolSettings,
+    academicYears: AcademicYear[]
 ) => {
-    // ... existing implementation of printStudentStatement ...
     const logoHtml = schoolSettings.schoolLogo 
         ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 80px; max-width: 80px;" />` 
         : '<div style="width: 80px; height: 80px; background: #eee; border-radius: 50%;"></div>';
@@ -418,206 +419,31 @@ export const printStudentStatement = (
         return price.toLocaleString(locale, { style: 'currency', currency: financialSettings.currency });
     };
 
-    interface LedgerItem {
-        date: string;
-        description: string;
-        debit: number;
-        credit: number;
-        type: 'charge' | 'payment';
-    }
-
-    const ledger: LedgerItem[] = [];
-    const now = new Date();
+    // Use unified ledger logic
+    const fullLedger = getStudentFinancialLedger(student, academicYears, financialSettings);
     
-    let monthlyFee = financialSettings.monthlyFee;
-    let enrollmentFee = financialSettings.enrollmentFee;
-    let renewalFee = financialSettings.renewalFee;
+    // Filter for the selected academic year, but keep track of previous balance
+    let previousBalance = 0;
+    const currentYearLedger: LedgerItem[] = [];
 
-    if (student.desiredClass) {
-        const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
-        if (specific) {
-            monthlyFee = specific.monthlyFee;
-            enrollmentFee = specific.enrollmentFee;
-            renewalFee = specific.renewalFee;
+    fullLedger.forEach((item: LedgerItem) => {
+        const itemYear = new Date(item.date).getFullYear();
+        // Note: This is a bit simplistic as academic years might not align perfectly with calendar years,
+        // but given the app structure, it's usually 1 year = 1 academic year.
+        // A better way would be to check the academicYear property if it existed on LedgerItem,
+        // but getStudentFinancialLedger uses dates.
+        
+        if (itemYear < academicYear) {
+            previousBalance += item.debit;
+            previousBalance -= item.credit;
+        } else if (itemYear === academicYear) {
+            currentYearLedger.push(item);
         }
-    }
+    });
 
-    const profile = student.financialProfile || { status: 'Normal' };
-    if (profile.status === 'Isento Total') {
-        monthlyFee = 0;
-        enrollmentFee = 0;
-        renewalFee = 0;
-    } else if (profile.status === 'Desconto Parcial') {
-        if (profile.affectedTypes?.includes('Mensalidade')) {
-            monthlyFee = monthlyFee * (1 - (profile.discountPercentage || 0) / 100);
-        }
-        if (profile.affectedTypes?.includes('Matrícula')) {
-            enrollmentFee = enrollmentFee * (1 - (profile.discountPercentage || 0) / 100);
-        }
-        if (profile.affectedTypes?.includes('Renovação')) {
-            renewalFee = renewalFee * (1 - (profile.discountPercentage || 0) / 100);
-        }
-    }
-
-    const hasPaidEnrollment = student.payments?.some(p => p.academicYear === academicYear && p.type === 'Matrícula');
-    const hasPaidRenewal = student.payments?.some(p => p.academicYear === academicYear && p.type === 'Renovação');
-
-    const matriculationYear = new Date(student.matriculationDate).getFullYear();
+    let runningBalance = previousBalance;
     
-    // Automatic Debit Generation (For unpaid items)
-    // Only generate if NOT paid. If paid, Block D handles it based on transaction.
-    
-    if (!hasPaidEnrollment && matriculationYear === academicYear && enrollmentFee > 0) {
-        // Double check: if they paid Renewal, they shouldn't owe Enrollment even if date matches
-        if (!hasPaidRenewal) {
-            ledger.push({
-                date: student.matriculationDate,
-                description: 'Matrícula / Inscrição (Pendente)',
-                debit: enrollmentFee,
-                credit: 0,
-                type: 'charge'
-            });
-        }
-    }
-    // CORREÇÃO: Adicionada verificação !hasPaidEnrollment.
-    // Se o aluno pagou Matrícula (Enrollment) para este ano, não deve cobrar Renovação, mesmo que seja aluno antigo.
-    else if (!hasPaidRenewal && !hasPaidEnrollment && matriculationYear < academicYear && student.status === 'Ativo' && renewalFee > 0) {
-        ledger.push({
-            date: `${academicYear}-01-15`,
-            description: 'Renovação de Matrícula (Pendente)',
-            debit: renewalFee,
-            credit: 0,
-            type: 'charge'
-        });
-    }
-
-    const startMonth = 2; 
-    const endMonth = 11;
-    const monthsNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-    const matriculationMonth = new Date(student.matriculationDate).getMonth() + 1;
-    
-    const limitDay = financialSettings.monthlyPaymentLimitDay || 10;
-    const penaltyPercent = financialSettings.latePaymentPenaltyPercent || 0;
-
-    for (let m = startMonth; m <= endMonth; m++) {
-        if (academicYear > now.getFullYear()) continue;
-        if (academicYear === now.getFullYear() && m > (now.getMonth() + 1)) continue;
-        if (matriculationYear === academicYear && m < matriculationMonth) continue;
-
-        if (monthlyFee > 0) {
-            const dueDate = `${academicYear}-${m.toString().padStart(2, '0')}-01`;
-            ledger.push({
-                date: dueDate,
-                description: `Mensalidade ${monthsNames[m-1]}`,
-                debit: monthlyFee,
-                credit: 0,
-                type: 'charge'
-            });
-
-            const penaltyDate = new Date(academicYear, m - 1, limitDay + 1);
-            
-            if (now >= penaltyDate) {
-                const isExemptFromPenalty = profile.status === 'Sem Multa' || profile.status === 'Isento Total';
-                
-                if (!isExemptFromPenalty && penaltyPercent > 0) {
-                    const paymentsForMonth = student.payments?.filter(p => 
-                        p.academicYear === academicYear && 
-                        (p.type === 'Mensalidade' || p.type === 'Matrícula' || p.type === 'Renovação') && 
-                        p.referenceMonth === m
-                    ) || [];
-
-                    const limitDateObj = new Date(academicYear, m - 1, limitDay);
-                    const limitDateStr = limitDateObj.toISOString().split('T')[0];
-
-                    const paidOnTime = paymentsForMonth.reduce((acc, p) => {
-                        if (p.date <= limitDateStr) return acc + p.amount;
-                        return acc;
-                    }, 0);
-
-                    if (paidOnTime < (monthlyFee - 1)) {
-                        const penaltyAmount = monthlyFee * (penaltyPercent / 100);
-                        ledger.push({
-                            date: penaltyDate.toISOString().split('T')[0],
-                            description: `Multa por Atraso (${monthsNames[m-1]})`,
-                            debit: penaltyAmount,
-                            credit: 0,
-                            type: 'charge'
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    if (student.extraCharges) {
-        student.extraCharges.forEach(charge => {
-            if (new Date(charge.date).getFullYear() === academicYear) {
-                ledger.push({
-                    date: charge.date.split('T')[0],
-                    description: charge.description,
-                    debit: charge.amount,
-                    credit: 0,
-                    type: 'charge'
-                });
-            }
-        });
-    }
-
-    if (student.payments) {
-        student.payments.forEach(p => {
-            if (p.academicYear === academicYear) {
-                if (p.type === 'Multa/Danos') return;
-
-                if (p.items && p.items.length > 0) {
-                    p.items.forEach(item => {
-                        const name = item.item.toLowerCase();
-                        const val = item.value;
-                        const isTuition = name.includes('mensalidade');
-                        if (!isTuition) {
-                             ledger.push({
-                                date: p.date,
-                                description: item.item, // Use explicit item name (e.g. Matrícula, Renovação)
-                                debit: val,
-                                credit: 0,
-                                type: 'charge'
-                            });
-                        }
-                    });
-                } 
-                else {
-                    const t = p.type;
-                    if (t !== 'Mensalidade') {
-                         ledger.push({
-                            date: p.date,
-                            description: p.description || t,
-                            debit: p.amount,
-                            credit: 0,
-                            type: 'charge'
-                        });
-                    }
-                }
-            }
-        });
-    }
-
-    if (student.payments) {
-        student.payments.forEach(p => {
-            if (p.academicYear === academicYear) {
-                ledger.push({
-                    date: p.date,
-                    description: `Pagamento (${p.type}) - ${p.method}`,
-                    debit: 0,
-                    credit: p.amount,
-                    type: 'payment'
-                });
-            }
-        });
-    }
-
-    ledger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    let runningBalance = 0;
-    const tableRows = ledger.map(item => {
+    const tableRows = currentYearLedger.map((item: LedgerItem) => {
         runningBalance += item.debit;
         runningBalance -= item.credit;
 
@@ -633,6 +459,17 @@ export const printStudentStatement = (
             </tr>
         `;
     }).join('');
+
+    // Add Initial Balance row if exists
+    const initialBalanceRow = previousBalance !== 0 ? `
+        <tr style="background: #f5f5f5; font-weight: bold;">
+            <td style="padding: 6px; border-bottom: 1px solid #eee;">-</td>
+            <td style="padding: 6px; border-bottom: 1px solid #eee;">SALDO ANTERIOR (ANOS ANTERIORES)</td>
+            <td style="padding: 6px; border-bottom: 1px solid #eee; text-align: right;">${previousBalance > 0 ? formatPrice(previousBalance) : '-'}</td>
+            <td style="padding: 6px; border-bottom: 1px solid #eee; text-align: right;">${previousBalance < 0 ? formatPrice(Math.abs(previousBalance)) : '-'}</td>
+            <td style="padding: 6px; border-bottom: 1px solid #eee; text-align: right; ${previousBalance > 0 ? 'color: red;' : 'color: green;'}">${formatPrice(previousBalance)}</td>
+        </tr>
+    ` : '';
 
     const documentHtml = `
         <!DOCTYPE html>
@@ -690,8 +527,9 @@ export const printStudentStatement = (
                         </tr>
                     </thead>
                     <tbody>
+                        ${initialBalanceRow}
                         ${tableRows}
-                        ${ledger.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:10px;">Sem movimentos registados.</td></tr>' : ''}
+                        ${currentYearLedger.length === 0 && previousBalance === 0 ? '<tr><td colspan="5" style="text-align:center; padding:10px;">Sem movimentos registados.</td></tr>' : ''}
                     </tbody>
                 </table>
 

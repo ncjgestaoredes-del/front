@@ -7,6 +7,8 @@ import Header from './Header';
 import { View } from './Dashboard';
 import MobilePaymentModal from './MobilePaymentModal';
 import ScheduleManagement from './ScheduleManagement';
+import { calculateStudentFinancialSummary, getStudentFinancialLedger, LedgerItem } from '../src/financialUtils';
+import { printStudentStatement } from './ReceiptUtils';
 
 interface GuardianPortalProps {
   user: User;
@@ -60,73 +62,9 @@ const monthsList = [
 ];
 
 // FUNÇÃO PARA CALCULAR O SALDO DO ALUNO
-const calculateStudentBalance = (student: Student, year: number, financialSettings: FinancialSettings): number => {
-    const startMonth = 2;
-    const now = new Date();
-    const currentMonth = year === now.getFullYear() ? now.getMonth() + 1 : 12;
-    
-    const matriculationYear = safeExtractYear(student.matriculationDate);
-    if (matriculationYear > year || matriculationYear === 0) return 0;
-
-    let totalDebit = 0;
-    let totalCredit = 0;
-
-    // 1. Taxa Inicial (Matrícula ou Renovação)
-    if (matriculationYear === year) {
-        let fee = financialSettings.enrollmentFee;
-        const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
-        if (specific) fee = specific.enrollmentFee;
-        totalDebit += fee;
-        
-        // Taxa de Exames Anual (Geralmente paga na matrícula)
-        totalDebit += financialSettings.annualExamFee || 0;
-    } else if (matriculationYear < year) {
-        let fee = financialSettings.renewalFee;
-        const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
-        if (specific) fee = specific.renewalFee;
-        totalDebit += fee;
-
-        // Taxa de Exames Anual (Geralmente paga na renovação)
-        totalDebit += financialSettings.annualExamFee || 0;
-    }
-
-    // 2. Mensalidades
-    let monthlyFee = financialSettings.monthlyFee;
-    if (student.desiredClass) {
-        const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
-        if (specific) monthlyFee = specific.monthlyFee;
-    }
-
-    let effectiveStartMonth = startMonth;
-    if (matriculationYear === year) {
-        const mDate = new Date(student.matriculationDate);
-        if (!isNaN(mDate.getTime())) {
-            effectiveStartMonth = Math.max(startMonth, mDate.getMonth() + 1);
-        }
-    }
-
-    for (let m = effectiveStartMonth; m <= currentMonth; m++) {
-        totalDebit += monthlyFee;
-    }
-
-    // 3. Pagamentos e Débitos Automáticos (Uniforme, etc)
-    ensureArray(student.payments).filter(p => Number(p.academicYear) === Number(year)).forEach(p => {
-        totalCredit += p.amount;
-        // Se for um item que gera custo imediato (on-demand) e NÃO é uma taxa extra já listada
-        // Uniforme e Material geralmente são vendas diretas sem ExtraCharge prévio
-        if (['Uniforme', 'Material', 'Taxa de Transferência'].includes(p.type)) {
-            totalDebit += p.amount;
-        }
-    });
-
-    // 4. Taxas Extras (Dívidas declaradas)
-    ensureArray(student.extraCharges).forEach(ec => {
-        if (safeExtractYear(ec.date) === year) {
-            totalDebit += ec.amount;
-        }
-    });
-
-    return totalDebit - totalCredit;
+const calculateStudentBalance = (student: Student, year: number, academicYears: AcademicYear[], financialSettings: FinancialSettings): number => {
+    const summary = calculateStudentFinancialSummary(student, academicYears, financialSettings);
+    return summary.balance;
 };
 
 const StatementModal: React.FC<{ 
@@ -134,111 +72,51 @@ const StatementModal: React.FC<{
     onClose: () => void; 
     student: Student | null; 
     year: number; 
+    academicYears: AcademicYear[];
     financialSettings: FinancialSettings;
-}> = ({ isOpen, onClose, student, year, financialSettings }) => {
+    schoolSettings: SchoolSettings;
+}> = ({ isOpen, onClose, student, year, academicYears, financialSettings, schoolSettings }) => {
     const formatCurrency = (val: number) => {
         return val.toLocaleString('pt-MZ', { style: 'currency', currency: financialSettings.currency || 'MZN' });
     };
 
     const ledger = useMemo(() => {
         if (!student) return [];
-        const items: { date: string; desc: string; debit: number; credit: number }[] = [];
-        const startMonth = 2;
-        const now = new Date();
-        const currentMonth = year === now.getFullYear() ? now.getMonth() + 1 : 11;
+        return getStudentFinancialLedger(student, academicYears, financialSettings);
+    }, [student, academicYears, financialSettings]);
+
+    // Filter for the selected academic year, but keep track of previous balance
+    const { currentYearLedger, previousBalance } = useMemo(() => {
+        let prevBal = 0;
+        const currentLedger: any[] = [];
         
-        const matriculationYear = safeExtractYear(student.matriculationDate);
-        
-        // 1. Taxa Inicial (Matrícula ou Renovação)
-        if (matriculationYear === year) {
-            let fee = financialSettings.enrollmentFee;
-            const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
-            if (specific) fee = specific.enrollmentFee;
-            items.push({ date: student.matriculationDate || `${year}-01-01`, desc: 'TAXA DE MATRÍCULA', debit: fee, credit: 0 });
-            
-            if (financialSettings.annualExamFee > 0) {
-                items.push({ date: student.matriculationDate || `${year}-01-01`, desc: 'TAXA DE EXAMES ANUAL', debit: financialSettings.annualExamFee, credit: 0 });
-            }
-        } else if (matriculationYear < year && matriculationYear > 0) {
-            let fee = financialSettings.renewalFee;
-            const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
-            if (specific) fee = specific.renewalFee;
-            items.push({ date: `${year}-01-01`, desc: 'TAXA DE RENOVAÇÃO', debit: fee, credit: 0 });
-
-            if (financialSettings.annualExamFee > 0) {
-                items.push({ date: `${year}-01-01`, desc: 'TAXA DE EXAMES ANUAL', debit: financialSettings.annualExamFee, credit: 0 });
-            }
-        }
-
-        // 2. Mensalidades
-        let monthlyFee = financialSettings.monthlyFee;
-        if (student.desiredClass) {
-            const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
-            if (specific) monthlyFee = specific.monthlyFee;
-        }
-
-        let effectiveStartMonth = startMonth;
-        if (matriculationYear === year) {
-            const mDate = new Date(student.matriculationDate);
-            if (!isNaN(mDate.getTime())) {
-                effectiveStartMonth = Math.max(startMonth, mDate.getMonth() + 1);
-            }
-        }
-
-        for (let m = effectiveStartMonth; m <= currentMonth; m++) {
-            items.push({ 
-                date: `${year}-${m.toString().padStart(2, '0')}-01`, 
-                desc: `MENSALIDADE - MÊS ${m}`, 
-                debit: monthlyFee, 
-                credit: 0 
-            });
-        }
-
-        // 3. Pagamentos e Débitos de Itens
-        ensureArray(student.payments).filter(p => Number(p.academicYear) === Number(year)).forEach(p => {
-            // Crédito do pagamento
-            items.push({ 
-                date: p.date, 
-                desc: `PAGAMENTO: ${p.type} (${p.method || 'Geral'})`, 
-                debit: 0, 
-                credit: p.amount 
-            });
-
-            // Débito correspondente para itens on-demand (que não são ExtraCharges)
-            if (['Uniforme', 'Material', 'Taxa de Transferência'].includes(p.type)) {
-                items.push({
-                    date: p.date,
-                    desc: `CUSTO DE ${p.type.toUpperCase()}`,
-                    debit: p.amount,
-                    credit: 0
-                });
+        ledger.forEach((item: LedgerItem) => {
+            const itemYear = new Date(item.date).getFullYear();
+            if (itemYear < year) {
+                prevBal += (item.debit - item.credit);
+            } else if (itemYear === year) {
+                currentLedger.push(item);
             }
         });
-
-        // 4. Taxas Extras (Dívidas declaradas)
-        ensureArray(student.extraCharges).forEach(ec => {
-            if (safeExtractYear(ec.date) === year) {
-                items.push({
-                    date: ec.date,
-                    desc: `TAXA EXTRA: ${ec.description}`,
-                    debit: ec.amount,
-                    credit: 0
-                });
-            }
-        });
-
-        return items.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    }, [student, year, financialSettings]);
+        
+        return { currentYearLedger: currentLedger, previousBalance: prevBal };
+    }, [ledger, year]);
 
     const ledgerWithBalance = useMemo(() => {
         const result: { date: string; desc: string; debit: number; credit: number; balance: number }[] = [];
-        let currentBalance = 0;
-        for (const item of ledger) {
+        let currentBalance = previousBalance;
+        
+        for (const item of currentYearLedger) {
             currentBalance += (item.debit - item.credit);
             result.push({ ...item, balance: currentBalance });
         }
         return result;
-    }, [ledger]);
+    }, [currentYearLedger, previousBalance]);
+
+    const handlePrint = () => {
+        if (!student) return;
+        printStudentStatement(student, year, financialSettings, schoolSettings, academicYears);
+    };
 
     if (!isOpen || !student) return null;
 
@@ -250,9 +128,19 @@ const StatementModal: React.FC<{
                         <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Extrato de Conta Corrente</h3>
                         <p className="text-sm font-bold text-indigo-500">{student.name} • Ano Letivo {year}</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors">
-                        <CloseIcon className="w-8 h-8 text-slate-400" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handlePrint}
+                            className="p-2 hover:bg-white rounded-full transition-colors text-indigo-600 flex items-center gap-2 font-bold text-xs uppercase"
+                            title="Imprimir Extrato"
+                        >
+                            <PrinterIcon className="w-6 h-6" />
+                            <span>Imprimir</span>
+                        </button>
+                        <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors">
+                            <CloseIcon className="w-8 h-8 text-slate-400" />
+                        </button>
+                    </div>
                 </header>
                 <div className="flex-1 overflow-y-auto p-8">
                     <table className="w-full text-sm">
@@ -266,6 +154,17 @@ const StatementModal: React.FC<{
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
+                            {previousBalance !== 0 && (
+                                <tr className="bg-slate-50/50">
+                                    <td className="py-4 text-slate-400">-</td>
+                                    <td className="py-4 font-bold text-slate-500 italic">SALDO ANTERIOR (ANOS ANTERIORES)</td>
+                                    <td className="py-4 text-right text-slate-400">{previousBalance > 0 ? formatCurrency(previousBalance) : '-'}</td>
+                                    <td className="py-4 text-right text-slate-400">{previousBalance < 0 ? formatCurrency(Math.abs(previousBalance)) : '-'}</td>
+                                    <td className={`py-4 text-right font-black ${previousBalance > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                        {formatCurrency(previousBalance)}
+                                    </td>
+                                </tr>
+                            )}
                             {ledgerWithBalance.map((item, i) => {
                                 return (
                                     <tr key={i} className="hover:bg-slate-50 transition-colors">
@@ -279,14 +178,21 @@ const StatementModal: React.FC<{
                                     </tr>
                                 );
                             })}
+                            {ledgerWithBalance.length === 0 && previousBalance === 0 && (
+                                <tr>
+                                    <td colSpan={5} className="py-12 text-center text-slate-400 font-bold italic">
+                                        Sem movimentos financeiros registados para este ano.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
                 <footer className="p-8 bg-slate-900 text-white flex justify-between items-center">
                     <div>
-                        <p className="text-[10px] font-black uppercase text-indigo-300 mb-1">Saldo Corrente</p>
-                        <p className="text-3xl font-black">{formatCurrency(Math.abs(ledgerWithBalance[ledgerWithBalance.length - 1]?.balance || 0))}</p>
-                        <p className="text-[10px] uppercase font-bold">{(ledgerWithBalance[ledgerWithBalance.length - 1]?.balance || 0) > 0 ? 'Dívida a Regularizar' : 'Situação Regularizada'}</p>
+                        <p className="text-[10px] font-black uppercase text-indigo-300 mb-1">Saldo Final</p>
+                        <p className="text-3xl font-black">{formatCurrency(Math.abs(ledgerWithBalance[ledgerWithBalance.length - 1]?.balance || previousBalance))}</p>
+                        <p className="text-[10px] uppercase font-bold">{(ledgerWithBalance[ledgerWithBalance.length - 1]?.balance || previousBalance) > 0 ? 'Dívida a Regularizar' : 'Situação Regularizada'}</p>
                     </div>
                     <button onClick={onClose} className="bg-indigo-600 px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all">Fechar Extrato</button>
                 </footer>
@@ -416,7 +322,7 @@ const StudentInfoCard: React.FC<{
 
     const studentBalance = useMemo(() => {
         if (!selectedYear) return 0;
-        return calculateStudentBalance(student, selectedYear, financialSettings);
+        return calculateStudentBalance(student, selectedYear, academicYears, financialSettings);
     }, [student, selectedYear, financialSettings]);
 
     const hasDebt = studentBalance > 0;
@@ -937,7 +843,7 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                         onClose={() => setIsPaymentOpen(false)}
                         student={paymentStudent}
                         financialSettings={financialSettings}
-                        amount={calculateStudentBalance(paymentStudent, selectedYear || new Date().getFullYear(), financialSettings)}
+                        amount={calculateStudentBalance(paymentStudent, selectedYear || new Date().getFullYear(), academicYears, financialSettings)}
                     />
                 )}
             </div>
@@ -947,7 +853,9 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                 onClose={() => setIsStatementOpen(false)} 
                 student={statementStudent} 
                 year={selectedYear || 2024} 
+                academicYears={academicYears}
                 financialSettings={financialSettings}
+                schoolSettings={schoolSettings}
             />
         </div>
     );
