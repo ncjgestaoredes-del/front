@@ -2,8 +2,9 @@
 import React, { useState, useMemo } from 'react';
 import { Turma, Student, AcademicYear, SchoolSettings, User, UserRole, AppNotification } from '../types';
 import CreateTurmaModal from './CreateTurmaModal';
-import { EditIcon, TrashIcon, UsersIcon, GraduationCapIcon } from './icons/IconComponents';
+import { EditIcon, TrashIcon, UsersIcon, GraduationCapIcon, PrinterIcon } from './icons/IconComponents';
 import TurmaDetails from './TurmaDetails';
+import { printAttendanceList } from './ReceiptUtils';
 
 interface TurmaManagementProps {
     turmas: Turma[];
@@ -226,6 +227,17 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
                             </div>
                             {canCreateTurma && (
                                 <div className="flex items-center justify-end space-x-2 mt-4 pt-4 border-t border-gray-200">
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const studentsInTurma = students.filter(s => turma.studentIds.includes(s.id));
+                                            printAttendanceList(turma, studentsInTurma, schoolSettings);
+                                        }} 
+                                        className="text-gray-600 hover:text-indigo-600 p-2 rounded-full hover:bg-gray-100 transition-colors" 
+                                        title="Imprimir Lista de Presenças"
+                                    >
+                                        <PrinterIcon className="w-5 h-5"/>
+                                    </button>
                                     <button onClick={(e) => handleOpenModal(e, turma)} className="text-indigo-600 hover:text-indigo-900 p-2 rounded-full hover:bg-indigo-50 transition-colors" title="Editar">
                                         <EditIcon className="w-5 h-5"/>
                                     </button>

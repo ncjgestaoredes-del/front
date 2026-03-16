@@ -797,3 +797,105 @@ export const exportClassPautaToExcel = (
     link.click();
     document.body.removeChild(link);
 }
+
+export const printAttendanceList = (
+    turma: Turma,
+    students: Student[],
+    schoolSettings: SchoolSettings,
+    monthName: string = ''
+) => {
+    const logoHtml = schoolSettings.schoolLogo 
+        ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 60px; max-width: 60px;" />` 
+        : '<div style="width: 60px; height: 60px; background: #eee; border-radius: 50%;"></div>';
+
+    // Generate 31 columns for days
+    const daysHeader = Array.from({ length: 31 }, (_, i) => `<th style="width: 20px; font-size: 8px;">${i + 1}</th>`).join('');
+    
+    const rowsHtml = students.map((s, index) => `
+        <tr>
+            <td style="text-align: center; font-size: 9px;">${index + 1}</td>
+            <td style="padding: 4px 8px; font-size: 10px; white-space: nowrap;">${s.name}</td>
+            ${Array.from({ length: 31 }, () => `<td style="border: 1px solid #ccc;"></td>`).join('')}
+        </tr>
+    `).join('');
+
+    const documentHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Lista de Presenças - ${turma.name}</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; }
+                .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #444; padding-bottom: 10px; }
+                .school-info { text-align: right; }
+                .school-name { font-size: 18px; font-weight: bold; margin: 0; text-transform: uppercase; }
+                .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 15px 0; text-transform: uppercase; text-decoration: underline; }
+                .class-info { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 11px; font-weight: bold; background: #f5f5f5; padding: 8px; border: 1px solid #ddd; }
+                
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                th, td { border: 1px solid #666; padding: 2px; }
+                th { background-color: #f0f0f0; font-weight: bold; }
+                
+                .footer { margin-top: 30px; display: flex; justify-content: space-around; font-size: 10px; }
+                .sig-box { border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px; margin-top: 40px; }
+                
+                @media print {
+                    @page { size: landscape; margin: 0.5cm; }
+                    body { padding: 0; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="logo">${logoHtml}</div>
+                <div class="school-info">
+                    <div class="school-name">${schoolSettings.schoolName || 'Instituição de Ensino'}</div>
+                    <div style="font-size: 10px;">${schoolSettings.address || ''}</div>
+                    <div style="font-size: 10px;">${schoolSettings.contact || ''}</div>
+                </div>
+            </div>
+
+            <div class="doc-title">Lista de Presenças / Mapa de Assiduidade</div>
+            
+            <div class="class-info">
+                <span>TURMA: ${turma.name}</span>
+                <span>CLASSE: ${turma.classLevel}</span>
+                <span>TURNO: ${turma.shift}</span>
+                <span>ANO LECTIVO: ${turma.academicYear}</span>
+                <span>MÊS: ____________________</span>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 30px; font-size: 9px;">Nº</th>
+                        <th style="text-align: left; padding-left: 10px; font-size: 10px;">Nome Completo do Aluno</th>
+                        ${daysHeader}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+
+            <div class="footer">
+                <div class="sig-box">O(A) Professor(a)</div>
+                <div class="sig-box">O Director de Turma</div>
+                <div class="sig-box">A Direcção</div>
+            </div>
+
+            <div style="margin-top: 20px; font-size: 8px; text-align: center; color: #888;">
+                Legenda: P - Presente | A - Ausente | J - Justificada | T - Atraso
+            </div>
+
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+    `;
+
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(documentHtml);
+        win.document.close();
+    }
+};
