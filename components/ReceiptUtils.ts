@@ -556,6 +556,127 @@ export const printStudentStatement = (
     }
 };
 
+export const printAttendanceList = (
+    student: Student,
+    academicYear: number,
+    schoolSettings: SchoolSettings
+) => {
+    const logoHtml = schoolSettings.schoolLogo 
+        ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 80px; max-width: 80px;" />` 
+        : '<div style="width: 80px; height: 80px; background: #eee; border-radius: 50%;"></div>';
+
+    const attendance = student.attendance || [];
+    const yearAttendance = attendance.filter(a => {
+        const date = new Date(a.date);
+        return date.getFullYear() === academicYear;
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const stats = {
+        presente: yearAttendance.filter(a => a.status === 'Presente').length,
+        ausente: yearAttendance.filter(a => a.status === 'Ausente').length,
+        atrasado: yearAttendance.filter(a => a.status === 'Atrasado').length,
+    };
+
+    const rowsHtml = yearAttendance.map(a => `
+        <tr>
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">${new Date(a.date).toLocaleDateString('pt-BR')}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold; color: ${a.status === 'Presente' ? '#27ae60' : a.status === 'Ausente' ? '#c0392b' : '#f39c12'};">
+                ${a.status}
+            </td>
+        </tr>
+    `).join('');
+
+    const documentHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Lista de Presença - ${student.name}</title>
+            <style>
+                body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 20px; color: #333; font-size: 12px; }
+                .container { max-width: 800px; margin: 0 auto; border: 1px solid #ddd; padding: 30px; }
+                .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
+                .school-info { text-align: right; }
+                .school-name { font-size: 20px; font-weight: bold; color: #2c3e50; margin: 0; }
+                .school-detail { font-size: 11px; color: #7f8c8d; margin: 2px 0; }
+                
+                .doc-title { text-align: center; font-size: 16px; font-weight: bold; text-transform: uppercase; margin-bottom: 20px; background: #f9f9f9; padding: 10px; border-radius: 4px; }
+                
+                .student-info { margin-bottom: 20px; padding: 10px; border: 1px solid #eee; border-radius: 4px; }
+                .student-info p { margin: 4px 0; }
+                
+                .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+                .stat-card { border: 1px solid #eee; padding: 10px; border-radius: 8px; text-align: center; }
+                .stat-value { font-size: 18px; font-weight: bold; }
+                .stat-label { font-size: 10px; text-transform: uppercase; color: #7f8c8d; }
+
+                table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                th { text-align: left; background: #eee; padding: 8px; border-bottom: 2px solid #ccc; font-size: 11px; text-transform: uppercase; }
+                
+                .footer { margin-top: 40px; font-size: 9px; text-align: center; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <div class="logo">${logoHtml}</div>
+                    <div class="school-info">
+                        <div class="school-name">${schoolSettings.schoolName || 'Escola'}</div>
+                        <div class="school-detail">Ano Lectivo: ${academicYear}</div>
+                        <div class="school-detail">Emissão: ${new Date().toLocaleDateString('pt-BR')}</div>
+                    </div>
+                </div>
+
+                <div class="doc-title">Relatório de Assiduidade</div>
+
+                <div class="student-info">
+                    <p><strong>Aluno:</strong> ${student.name}</p>
+                    <p><strong>Código:</strong> ${student.id} | <strong>Classe:</strong> ${student.desiredClass}</p>
+                    <p><strong>Encarregado:</strong> ${student.guardianName}</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" style="color: #27ae60;">${stats.presente}</div>
+                        <div class="stat-label">Presenças</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" style="color: #c0392b;">${stats.ausente}</div>
+                        <div class="stat-label">Faltas</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" style="color: #f39c12;">${stats.atrasado}</div>
+                        <div class="stat-label">Atrasos</div>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th width="50%">Data</th>
+                            <th width="50%">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml || '<tr><td colspan="2" style="text-align:center; padding:20px;">Sem registos de assiduidade para este ano.</td></tr>'}
+                    </tbody>
+                </table>
+
+                <div class="footer">
+                    Documento informativo gerado pelo Sistema de Gestão Escolar.
+                </div>
+            </div>
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+    `;
+
+    const printWindow = window.open('', '_blank', 'width=900,height=900');
+    if (printWindow) {
+        printWindow.document.write(documentHtml);
+        printWindow.document.close();
+    }
+};
+
 const calculateFinalGrade = (acs1: number = 0, acs2: number = 0, at: number = 0, settings: SchoolSettings): number => {
     const p1 = settings.evaluationWeights?.p1 || 40;
     const p2 = settings.evaluationWeights?.p2 || 60;
@@ -802,22 +923,69 @@ export const printAttendanceList = (
     turma: Turma,
     students: Student[],
     schoolSettings: SchoolSettings,
-    monthName: string = ''
+    month?: number,
+    year?: number
 ) => {
     const logoHtml = schoolSettings.schoolLogo 
         ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 60px; max-width: 60px;" />` 
         : '<div style="width: 60px; height: 60px; background: #eee; border-radius: 50%;"></div>';
 
-    // Generate 31 columns for days
-    const daysHeader = Array.from({ length: 31 }, (_, i) => `<th style="width: 20px; font-size: 8px;">${i + 1}</th>`).join('');
+    // Se não for passado mês/ano, usa o atual
+    const now = new Date();
+    const targetMonth = month || (now.getMonth() + 1);
+    const targetYear = year || turma.academicYear || now.getFullYear();
+
+    const monthNames = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    const monthName = monthNames[targetMonth - 1];
+
+    // Get number of days in month
+    const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+
+    // Generate columns for days
+    const daysHeader = Array.from({ length: 31 }, (_, i) => {
+        const day = i + 1;
+        const isInvalidDay = day > daysInMonth;
+        return `<th style="width: 20px; font-size: 8px; ${isInvalidDay ? 'background-color: #eee;' : ''}">${day}</th>`;
+    }).join('');
     
-    const rowsHtml = students.map((s, index) => `
-        <tr>
-            <td style="text-align: center; font-size: 9px;">${index + 1}</td>
-            <td style="padding: 4px 8px; font-size: 10px; white-space: nowrap;">${s.name}</td>
-            ${Array.from({ length: 31 }, () => `<td style="border: 1px solid #ccc;"></td>`).join('')}
-        </tr>
-    `).join('');
+    const getAttendanceSymbol = (status?: string) => {
+        switch (status) {
+            case 'Presente': return 'P';
+            case 'Ausente': return 'A';
+            case 'Atrasado': return 'T';
+            default: return '';
+        }
+    };
+
+    const rowsHtml = students.map((s, index) => {
+        const dayCells = Array.from({ length: 31 }, (_, i) => {
+            const day = i + 1;
+            if (day > daysInMonth) return `<td style="border: 1px solid #ccc; background-color: #eee;"></td>`;
+
+            // Format date as YYYY-MM-DD
+            const dateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const record = s.attendance?.find(a => a.date === dateStr);
+            const symbol = getAttendanceSymbol(record?.status);
+            
+            let color = '#333';
+            if (symbol === 'A') color = '#ef4444';
+            if (symbol === 'T') color = '#f59e0b';
+            if (symbol === 'P') color = '#10b981';
+
+            return `<td style="border: 1px solid #ccc; text-align: center; font-size: 9px; font-weight: bold; color: ${color};">${symbol}</td>`;
+        }).join('');
+
+        return `
+            <tr>
+                <td style="text-align: center; font-size: 9px;">${index + 1}</td>
+                <td style="padding: 4px 8px; font-size: 10px; white-space: nowrap;">${s.name}</td>
+                ${dayCells}
+            </tr>
+        `;
+    }).join('');
 
     const documentHtml = `
         <!DOCTYPE html>
@@ -862,7 +1030,7 @@ export const printAttendanceList = (
                 <span>CLASSE: ${turma.classLevel}</span>
                 <span>TURNO: ${turma.shift}</span>
                 <span>ANO LECTIVO: ${turma.academicYear}</span>
-                <span>MÊS: ____________________</span>
+                <span>MÊS: ${monthName.toUpperCase()}</span>
             </div>
 
             <table>

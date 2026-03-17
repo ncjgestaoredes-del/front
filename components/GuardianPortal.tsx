@@ -8,7 +8,7 @@ import { View } from './Dashboard';
 import MobilePaymentModal from './MobilePaymentModal';
 import ScheduleManagement from './ScheduleManagement';
 import { calculateStudentFinancialSummary, getStudentFinancialLedger, LedgerItem } from '../src/financialUtils';
-import { printStudentStatement } from './ReceiptUtils';
+import { printStudentStatement, printAttendanceList } from './ReceiptUtils';
 
 interface GuardianPortalProps {
   user: User;
@@ -562,7 +562,15 @@ const StudentInfoCard: React.FC<{
                                     <CalendarIcon className="w-4 h-4 mr-2 text-indigo-600" />
                                     Histórico de Incidentes
                                 </h4>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-4">
+                                    <button 
+                                        onClick={() => printAttendanceList(student, Number(selectedYear), schoolSettings)}
+                                        className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
+                                    >
+                                        <PrinterIcon className="w-4 h-4 text-indigo-500" />
+                                        Imprimir Lista
+                                    </button>
+                                    <div className="flex items-center gap-2">
                                     <div className="flex items-center bg-slate-100 rounded-lg px-2 py-1">
                                         <FilterIcon className="w-3 h-3 text-slate-400 mr-1" />
                                         <select 
@@ -584,6 +592,7 @@ const StudentInfoCard: React.FC<{
                                             <option value="Ausente">Faltas</option>
                                             <option value="Atrasado">Atrasos</option>
                                         </select>
+                                    </div>
                                     </div>
                                 </div>
                             </div>

@@ -231,7 +231,8 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             const studentsInTurma = students.filter(s => turma.studentIds.includes(s.id));
-                                            printAttendanceList(turma, studentsInTurma, schoolSettings);
+                                            const currentMonth = new Date().getMonth() + 1;
+                                            printAttendanceList(turma, studentsInTurma, schoolSettings, currentMonth, turma.academicYear);
                                         }} 
                                         className="text-gray-600 hover:text-indigo-600 p-2 rounded-full hover:bg-gray-100 transition-colors" 
                                         title="Imprimir Lista de Presenças"

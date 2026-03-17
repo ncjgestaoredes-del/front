@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Turma, Student, Subject, SchoolSettings, Grade, User, UserRole, AttendanceRecord, BehaviorEvaluation, ExamResult, AppNotification } from '../types';
-import { ChevronDownIcon, ChartBarIcon, CollectionIcon, BookOpenIcon, CalendarIcon, CheckCircleIcon, StarIcon, ExclamationTriangleIcon, PrinterIcon, CloseIcon, TableCellsIcon } from './icons/IconComponents';
+import { ChevronDownIcon, ChartBarIcon, CollectionIcon, BookOpenIcon, CalendarIcon, CheckCircleIcon, StarIcon, ExclamationTriangleIcon, PrinterIcon, CloseIcon, TableCellsIcon, FilterIcon } from './icons/IconComponents';
 import { printClassPauta, exportClassPautaToExcel, PrintOptions, printAttendanceList } from './ReceiptUtils';
 import ScheduleManagement from './ScheduleManagement';
 
@@ -170,6 +170,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
     // USANDO DATA LOCAL DE MOÇAMBIQUE
     const [attendanceDate, setAttendanceDate] = useState<string>(getLocalDateString());
     const [attendanceChanges, setAttendanceChanges] = useState<Record<string, 'Presente' | 'Ausente' | 'Atrasado'>>({});
+    const [selectedAttendanceMonth, setSelectedAttendanceMonth] = useState<number>(new Date().getMonth() + 1);
 
     const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
     const [behaviorChanges, setBehaviorChanges] = useState<Record<string, BehaviorEvaluation>>({});
@@ -378,9 +379,29 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
         }).length;
     };
 
+    const getMonthlyAbsences = (student: Student, month: number) => {
+        if (!student.attendance) return 0;
+        return student.attendance.filter(a => {
+            const parts = a.date.split('-');
+            const year = parseInt(parts[0]) || 0;
+            const m = parseInt(parts[1]) || 0;
+            return year === turma.academicYear && m === month && (a.status === 'Ausente' || a.status === 'Atrasado');
+        }).length;
+    };
+
     const handleAttendanceChange = (studentId: string, status: 'Presente' | 'Ausente' | 'Atrasado') => {
         if (!canEditAttendance) return;
         setAttendanceChanges(prev => ({ ...prev, [studentId]: status }));
+        setSaveStatus('idle');
+    };
+
+    const handleMarkAllPresent = () => {
+        if (!canEditAttendance) return;
+        const changes: Record<string, 'Presente' | 'Ausente' | 'Atrasado'> = {};
+        studentsInTurma.forEach(student => {
+            changes[student.id] = 'Presente';
+        });
+        setAttendanceChanges(prev => ({ ...prev, ...changes }));
         setSaveStatus('idle');
     };
 
@@ -551,7 +572,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                     )}
                     {activeView === 'attendance' && (
                         <button
-                            onClick={() => printAttendanceList(turma, studentsInTurma, settings)}
+                            onClick={() => printAttendanceList(turma, studentsInTurma, settings, selectedAttendanceMonth, turma.academicYear)}
                             className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm font-medium transition-colors"
                         >
                             <PrinterIcon className="w-4 h-4 mr-2" />
@@ -892,7 +913,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                 {activeView === 'attendance' && (
                     <>
                          <div className="flex flex-wrap items-center justify-between mb-6 gap-3">
-                            <div className="flex items-center space-x-4">
+                            <div className="flex flex-wrap items-center gap-4">
                                  <div>
                                     <label className="block text-xs font-medium text-gray-500 mb-1">Data</label>
                                     <input 
@@ -902,23 +923,48 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                         className="p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
                                     />
                                 </div>
-                            </div>
-                            {canEditAttendance && (
-                                 <div className="flex items-center space-x-2">
-                                    {saveStatus === 'saved' && <span className="text-green-600 font-bold animate-pulse text-sm">Salvo!</span>}
-                                    <button 
-                                        onClick={handleSaveAttendance}
-                                        disabled={Object.keys(attendanceChanges).length === 0 || saveStatus === 'saving'}
-                                        className={`px-4 py-2 rounded-lg font-bold shadow-sm transition-all text-sm ${
-                                            Object.keys(attendanceChanges).length > 0 
-                                            ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
-                                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                        }`}
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Filtrar por Mês</label>
+                                    <select 
+                                        value={selectedAttendanceMonth}
+                                        onChange={(e) => setSelectedAttendanceMonth(Number(e.target.value))}
+                                        className="p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
                                     >
-                                        {saveStatus === 'saving' ? 'A carregar...' : 'Salvar Chamada'}
+                                        {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                                            <option key={m} value={m}>
+                                                {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][m-1]}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {canEditAttendance && (
+                                    <button 
+                                        onClick={handleMarkAllPresent}
+                                        className="flex items-center px-4 py-2 bg-green-50 text-green-700 border border-green-100 rounded-lg font-medium hover:bg-green-100 transition-colors text-sm"
+                                    >
+                                        <CheckCircleIcon className="w-4 h-4 mr-2" />
+                                        Marcar todos como Presente
                                     </button>
-                                 </div>
-                            )}
+                                )}
+                                {canEditAttendance && (
+                                     <div className="flex items-center space-x-2">
+                                        {saveStatus === 'saved' && <span className="text-green-600 font-bold animate-pulse text-sm">Salvo!</span>}
+                                        <button 
+                                            onClick={handleSaveAttendance}
+                                            disabled={Object.keys(attendanceChanges).length === 0 || saveStatus === 'saving'}
+                                            className={`px-4 py-2 rounded-lg font-bold shadow-sm transition-all text-sm ${
+                                                Object.keys(attendanceChanges).length > 0 
+                                                ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
+                                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                            }`}
+                                        >
+                                            {saveStatus === 'saving' ? 'A carregar...' : 'Salvar Chamada'}
+                                        </button>
+                                     </div>
+                                )}
+                            </div>
                          </div>
 
                          <div className="overflow-x-auto border rounded-lg">
@@ -926,6 +972,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                 <thead className="bg-gray-50">
                                     <tr>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">Aluno</th>
+                                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Faltas no Mês</th>
                                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Faltas no Ano</th>
                                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                     </tr>
@@ -934,6 +981,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                     {studentsInTurma.length > 0 ? studentsInTurma.map(student => {
                                         const status = getAttendanceStatus(student);
                                         const totalAbsences = getTotalAbsences(student);
+                                        const monthlyAbsences = getMonthlyAbsences(student, selectedAttendanceMonth);
                                         return (
                                             <tr key={student.id} className="hover:bg-gray-50">
                                                  <td className="px-6 py-4 whitespace-nowrap flex items-center">
@@ -942,6 +990,11 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                         <div className="text-sm font-medium text-gray-900">{student.name}</div>
                                                         <div className="text-[10px] text-gray-500">{student.id}</div>
                                                     </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${monthlyAbsences > 2 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
+                                                        {monthlyAbsences}
+                                                    </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${totalAbsences > 5 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
@@ -982,7 +1035,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                          </div>
                          <div className="flex justify-center mt-6">
                              <button 
-                                 onClick={() => printAttendanceList(turma, studentsInTurma, settings)}
+                                 onClick={() => printAttendanceList(turma, studentsInTurma, settings, selectedAttendanceMonth, turma.academicYear)}
                                  className="flex items-center px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition-colors"
                              >
                                  <PrinterIcon className="w-5 h-5 mr-2" />
