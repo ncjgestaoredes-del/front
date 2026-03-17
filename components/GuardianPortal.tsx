@@ -8,7 +8,7 @@ import { View } from './Dashboard';
 import MobilePaymentModal from './MobilePaymentModal';
 import ScheduleManagement from './ScheduleManagement';
 import { calculateStudentFinancialSummary, getStudentFinancialLedger, LedgerItem } from '../src/financialUtils';
-import { printStudentStatement, printAttendanceList } from './ReceiptUtils';
+import { printStudentStatement, printStudentAttendanceList } from './ReceiptUtils';
 
 interface GuardianPortalProps {
   user: User;
@@ -290,8 +290,8 @@ const StudentInfoCard: React.FC<{
         const absent = recordsInYear.filter(r => r.status === 'Ausente').length;
         const late = recordsInYear.filter(r => r.status === 'Atrasado').length;
 
-        // Histórico filtrado para exibição (Incidentes: Faltas e Atrasos)
-        let history = recordsInYear.filter(r => r.status !== 'Presente');
+        // Histórico filtrado para exibição (Todos os registos)
+        let history = [...recordsInYear];
 
         if (attMonthFilter !== 'all') {
             history = history.filter(r => (new Date(r.date).getMonth() + 1) === Number(attMonthFilter));
@@ -560,11 +560,11 @@ const StudentInfoCard: React.FC<{
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2 border-b border-slate-100 pb-2">
                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
                                     <CalendarIcon className="w-4 h-4 mr-2 text-indigo-600" />
-                                    Histórico de Incidentes
+                                    Histórico de Assiduidade
                                 </h4>
                                 <div className="flex items-center gap-4">
                                     <button 
-                                        onClick={() => printAttendanceList(student, Number(selectedYear), schoolSettings)}
+                                        onClick={() => printStudentAttendanceList(student, Number(selectedYear), schoolSettings)}
                                         className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
                                     >
                                         <PrinterIcon className="w-4 h-4 text-indigo-500" />
@@ -589,6 +589,7 @@ const StudentInfoCard: React.FC<{
                                             className="text-[9px] font-black uppercase border-none bg-transparent focus:ring-0 p-0 text-slate-600 cursor-pointer"
                                         >
                                             <option value="all">Tipo: Todos</option>
+                                            <option value="Presente">Presenças</option>
                                             <option value="Ausente">Faltas</option>
                                             <option value="Atrasado">Atrasos</option>
                                         </select>
@@ -598,27 +599,44 @@ const StudentInfoCard: React.FC<{
                             </div>
                             
                             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                                {attendanceSummary.history.length > 0 ? (
-                                    attendanceSummary.history.map((record, i) => (
-                                        <div key={i} className="flex items-center p-2.5 bg-white rounded-xl border border-slate-100 shadow-sm transition-transform hover:scale-[1.02]">
-                                            <div className={`p-1.5 rounded-lg mr-2.5 ${record.status === 'Ausente' ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
-                                                {record.status === 'Ausente' ? <CloseIcon className="w-4 h-4" /> : <ClockIcon className="w-4 h-4" />}
+                                    {attendanceSummary.history.length > 0 ? (
+                                        attendanceSummary.history.map((record, i) => (
+                                            <div key={i} className="flex items-center p-3 bg-white rounded-2xl border border-slate-100 shadow-sm transition-all hover:shadow-md hover:border-indigo-100 group">
+                                                <div className={`p-2 rounded-xl mr-3 transition-colors ${
+                                                    record.status === 'Presente' ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100' :
+                                                    record.status === 'Ausente' ? 'bg-rose-50 text-rose-600 group-hover:bg-rose-100' : 
+                                                    'bg-amber-50 text-amber-600 group-hover:bg-amber-100'
+                                                }`}>
+                                                    {record.status === 'Presente' ? <CheckCircleIcon className="w-5 h-5" /> : 
+                                                     record.status === 'Ausente' ? <CloseIcon className="w-5 h-5" /> : 
+                                                     <ClockIcon className="w-5 h-5" />}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-[12px] font-black text-slate-800 truncate">
+                                                        {new Date(record.date).toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}
+                                                    </p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className={`text-[9px] font-black uppercase tracking-widest ${
+                                                            record.status === 'Presente' ? 'text-emerald-500' :
+                                                            record.status === 'Ausente' ? 'text-rose-500' : 
+                                                            'text-amber-500'
+                                                        }`}>
+                                                            {record.status}
+                                                        </p>
+                                                        {record.justification && (
+                                                            <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold uppercase">Justificado</span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="min-w-0">
-                                                <p className="text-[11px] font-black text-slate-700 truncate">
-                                                    {new Date(record.date).toLocaleDateString('pt-PT')}
-                                                </p>
-                                                <p className={`text-[8px] font-black uppercase tracking-tighter ${record.status === 'Ausente' ? 'text-rose-400' : 'text-amber-400'}`}>
-                                                    {record.status}
-                                                </p>
-                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="col-span-full text-center py-16 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
+                                            <CalendarIcon className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                                            <p className="text-slate-400 font-black uppercase tracking-widest text-[10px]">Nenhum registo de assiduidade encontrado.</p>
+                                            <p className="text-slate-300 text-[9px] font-bold mt-1 uppercase">Verifique o ano letivo ou os filtros selecionados.</p>
                                         </div>
-                                    ))
-                                ) : (
-                                    <div className="col-span-full text-center py-8 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <p className="text-slate-400 font-black uppercase tracking-widest text-[9px]">Nenhum incidente encontrado com estes filtros.</p>
-                                    </div>
-                                )}
+                                    )}
                             </div>
                         </div>
                     </div>

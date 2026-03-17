@@ -556,7 +556,7 @@ export const printStudentStatement = (
     }
 };
 
-export const printAttendanceList = (
+export const printStudentAttendanceList = (
     student: Student,
     academicYear: number,
     schoolSettings: SchoolSettings
@@ -565,10 +565,22 @@ export const printAttendanceList = (
         ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 80px; max-width: 80px;" />` 
         : '<div style="width: 80px; height: 80px; background: #eee; border-radius: 50%;"></div>';
 
+    const safeExtractYear = (dateInput: any): number => {
+        if (!dateInput) return 0;
+        try {
+            const d = new Date(dateInput);
+            if (!isNaN(d.getTime())) return d.getFullYear();
+            const s = String(dateInput);
+            const match = s.match(/\d{4}/);
+            return match ? parseInt(match[0]) : 0;
+        } catch (e) {
+            return 0;
+        }
+    };
+
     const attendance = student.attendance || [];
     const yearAttendance = attendance.filter(a => {
-        const date = new Date(a.date);
-        return date.getFullYear() === academicYear;
+        return safeExtractYear(a.date) === academicYear;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const stats = {
@@ -919,7 +931,7 @@ export const exportClassPautaToExcel = (
     document.body.removeChild(link);
 }
 
-export const printAttendanceList = (
+export const printTurmaAttendanceList = (
     turma: Turma,
     students: Student[],
     schoolSettings: SchoolSettings,

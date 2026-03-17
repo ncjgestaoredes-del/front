@@ -4,7 +4,7 @@ import { Turma, Student, AcademicYear, SchoolSettings, User, UserRole, AppNotifi
 import CreateTurmaModal from './CreateTurmaModal';
 import { EditIcon, TrashIcon, UsersIcon, GraduationCapIcon, PrinterIcon } from './icons/IconComponents';
 import TurmaDetails from './TurmaDetails';
-import { printAttendanceList } from './ReceiptUtils';
+import { printTurmaAttendanceList } from './ReceiptUtils';
 
 interface TurmaManagementProps {
     turmas: Turma[];
@@ -232,7 +232,7 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
                                             e.stopPropagation();
                                             const studentsInTurma = students.filter(s => turma.studentIds.includes(s.id));
                                             const currentMonth = new Date().getMonth() + 1;
-                                            printAttendanceList(turma, studentsInTurma, schoolSettings, currentMonth, turma.academicYear);
+                                            printTurmaAttendanceList(turma, studentsInTurma, schoolSettings, currentMonth, turma.academicYear);
                                         }} 
                                         className="text-gray-600 hover:text-indigo-600 p-2 rounded-full hover:bg-gray-100 transition-colors" 
                                         title="Imprimir Lista de Presenças"

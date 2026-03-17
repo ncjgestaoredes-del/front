@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Turma, Student, Subject, SchoolSettings, Grade, User, UserRole, AttendanceRecord, BehaviorEvaluation, ExamResult, AppNotification } from '../types';
 import { ChevronDownIcon, ChartBarIcon, CollectionIcon, BookOpenIcon, CalendarIcon, CheckCircleIcon, StarIcon, ExclamationTriangleIcon, PrinterIcon, CloseIcon, TableCellsIcon, FilterIcon } from './icons/IconComponents';
-import { printClassPauta, exportClassPautaToExcel, PrintOptions, printAttendanceList } from './ReceiptUtils';
+import { printClassPauta, exportClassPautaToExcel, PrintOptions, printTurmaAttendanceList } from './ReceiptUtils';
 import ScheduleManagement from './ScheduleManagement';
 
 // FUNÇÃO PARA PEGAR DATA LOCAL EM FORMATO YYYY-MM-DD (Moçambique)
@@ -572,7 +572,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                     )}
                     {activeView === 'attendance' && (
                         <button
-                            onClick={() => printAttendanceList(turma, studentsInTurma, settings, selectedAttendanceMonth, turma.academicYear)}
+                            onClick={() => printTurmaAttendanceList(turma, studentsInTurma, settings, selectedAttendanceMonth, turma.academicYear)}
                             className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm font-medium transition-colors"
                         >
                             <PrinterIcon className="w-4 h-4 mr-2" />
@@ -1035,7 +1035,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                          </div>
                          <div className="flex justify-center mt-6">
                              <button 
-                                 onClick={() => printAttendanceList(turma, studentsInTurma, settings, selectedAttendanceMonth, turma.academicYear)}
+                                 onClick={() => printTurmaAttendanceList(turma, studentsInTurma, settings, selectedAttendanceMonth, turma.academicYear)}
                                  className="flex items-center px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition-colors"
                              >
                                  <PrinterIcon className="w-5 h-5 mr-2" />
