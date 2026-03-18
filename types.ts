@@ -63,7 +63,7 @@ export type StudentStatus = 'Ativo' | 'Inativo' | 'Transferido' | 'Suspenso';
 export interface StudentDocuments { photos: boolean; cedula: boolean; bi: boolean; drivingLicense: boolean; reportCard: boolean; transcript: boolean; transferNote: boolean; }
 export interface Grade { subject: string; period: '1º Trimestre' | '2º Trimestre' | '3º Trimestre'; grade?: number; acs1?: number; acs2?: number; at?: number; academicYear: number; }
 export interface ExamResult { subject: string; grade: number; academicYear: number; }
-export interface AttendanceRecord { date: string; status: 'Presente' | 'Ausente' | 'Atrasado'; }
+export interface AttendanceRecord { date: string; status: 'Presente' | 'Ausente' | 'Atrasado'; justification?: string; }
 export interface BehaviorNote { date: string; note: string; type: 'Positivo' | 'Negativo'; severity?: 'Leve' | 'Moderada' | 'Grave'; measureTaken?: string; }
 export interface BehaviorEvaluation { period: '1º Trimestre' | '2º Trimestre' | '3º Trimestre'; academicYear: number; scores: { assiduidade: number; disciplina: number; participacao: number; responsabilidade: number; socializacao: number; atitude: number; organizacao: number; }; percentage: number; }
 export type AcademicYearStatus = 'Planeado' | 'Em Curso' | 'Concluído';

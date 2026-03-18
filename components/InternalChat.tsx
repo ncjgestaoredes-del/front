@@ -198,14 +198,16 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
 
         // Notify added user
         if (isAdding) {
+            const timestamp = new Date().toISOString();
+            const notifId = `notif_invite_${new Date().getTime()}_${userId}`;
             onAddNotifications([{
-                id: `notif_invite_${Date.now()}_${userId}`,
+                id: notifId,
                 userId: userId,
                 type: 'topic_invite',
                 title: 'Convite para Reunião',
                 message: `Você foi adicionado ao grupo "${activeTopic.title}"`,
                 read: false,
-                timestamp: new Date().toISOString(),
+                timestamp: timestamp,
                 relatedId: activeTopic.id
             }]);
         }

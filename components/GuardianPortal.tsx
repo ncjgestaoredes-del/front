@@ -63,7 +63,7 @@ const monthsList = [
 
 // FUNÇÃO PARA CALCULAR O SALDO DO ALUNO
 const calculateStudentBalance = (student: Student, year: number, academicYears: AcademicYear[], financialSettings: FinancialSettings): number => {
-    const summary = calculateStudentFinancialSummary(student, academicYears, financialSettings);
+    const summary = calculateStudentFinancialSummary(student, academicYears, financialSettings, year);
     return summary.balance;
 };
 
@@ -320,12 +320,11 @@ const StudentInfoCard: React.FC<{
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [student.behavior, selectedYear]);
 
-    const studentBalance = useMemo(() => {
-        if (!selectedYear) return 0;
-        return calculateStudentBalance(student, selectedYear, academicYears, financialSettings);
-    }, [student, selectedYear, financialSettings]);
+    const totalBalance = useMemo(() => {
+        return calculateStudentFinancialSummary(student, academicYears, financialSettings).balance;
+    }, [student, academicYears, financialSettings]);
 
-    const hasDebt = studentBalance > 0;
+    const hasDebt = totalBalance < 0;
 
     const formatCurrency = (val: number) => {
         return val.toLocaleString('pt-MZ', { style: 'currency', currency: financialSettings.currency || 'MZN' });
@@ -366,8 +365,8 @@ const StudentInfoCard: React.FC<{
                         </p>
                         
                         <div className="bg-white p-8 rounded-[2rem] border-2 border-rose-100 shadow-xl mb-8">
-                            <p className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em] mb-2">Total em Dívida</p>
-                            <p className="text-5xl font-black text-slate-900">{formatCurrency(studentBalance)}</p>
+                            <p className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em] mb-2">Total em Dívida Acumulada</p>
+                            <p className="text-5xl font-black text-slate-900">{formatCurrency(Math.abs(totalBalance))}</p>
                             <p className="text-xs text-slate-400 font-bold mt-4 uppercase">Regularize a situação na secretaria para restabelecer o acesso total.</p>
                         </div>
 
@@ -800,18 +799,22 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
         return Array.from(yearsSet).sort((a, b) => b - a);
     }, [myStudents, turmas, academicYears]);
 
-    const [selectedYear, setSelectedYear] = useState<number | null>(null);
+    const [selectedYearState, setSelectedYearState] = useState<number | null>(null);
+    
+    const selectedYear = useMemo(() => {
+        if (selectedYearState !== null && availableYears.includes(selectedYearState)) {
+            return selectedYearState;
+        }
+        const activeYear = academicYears.find(ay => ay.status === 'Em Curso')?.year;
+        if (activeYear && availableYears.includes(Number(activeYear))) return Number(activeYear);
+        if (availableYears.length > 0) return Number(availableYears[0]);
+        return null;
+    }, [selectedYearState, availableYears, academicYears]);
+
     const [statementStudent, setStatementStudent] = useState<Student | null>(null);
     const [isStatementOpen, setIsStatementOpen] = useState(false);
     const [paymentStudent, setPaymentStudent] = useState<Student | null>(null);
     const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-
-    useEffect(() => { 
-        if (availableYears.length > 0 && (selectedYear === null || !availableYears.includes(Number(selectedYear)))) {
-            const activeYear = academicYears.find(ay => ay.status === 'Em Curso')?.year;
-            setSelectedYear(activeYear ? Number(activeYear) : Number(availableYears[0])); 
-        }
-    }, [availableYears, selectedYear, academicYears]);
 
     return (
         <div className="flex h-screen bg-[#fcfcfd] font-sans overflow-hidden">
@@ -830,7 +833,7 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Filtrar por Ano:</span>
                                     <select 
                                         value={selectedYear || ''} 
-                                        onChange={(e) => setSelectedYear(Number(e.target.value))} 
+                                        onChange={(e) => setSelectedYearState(Number(e.target.value))} 
                                         className="border-none rounded-xl text-sm font-black text-indigo-600 focus:ring-0 bg-slate-50 py-2 pr-10"
                                     >
                                         {availableYears.map(year => <option key={year} value={year}>Ano Letivo {year}</option>)}
@@ -870,7 +873,7 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                         onClose={() => setIsPaymentOpen(false)}
                         student={paymentStudent}
                         financialSettings={financialSettings}
-                        amount={calculateStudentBalance(paymentStudent, selectedYear || new Date().getFullYear(), academicYears, financialSettings)}
+                        amount={Math.max(0, -calculateStudentFinancialSummary(paymentStudent, academicYears, financialSettings).balance)}
                     />
                 )}
             </div>

@@ -147,7 +147,7 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
         }
     };
 
-    const isPaymentLate = (targetMonth: number, academicYear: number, student: Student): boolean => {
+    const isPaymentLate = React.useCallback((targetMonth: number, academicYear: number, student: Student): boolean => {
         const profile = student.financialProfile;
         if (profile?.status === 'Sem Multa' || profile?.status === 'Isento Total') return false;
         if (!activeYear) return false;
@@ -163,9 +163,9 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
             if (currentDay > limitDay) return true;
         }
         return false;
-    };
+    }, [activeYear, financialSettings.monthlyPaymentLimitDay]);
 
-    const getDiscountedFee = (student: Student | null, baseFee: number, type: PaymentType) => {
+    const getDiscountedFee = React.useCallback((student: Student | null, baseFee: number, type: PaymentType) => {
         if (!student) return baseFee;
         const profile = student.financialProfile || { status: 'Normal' };
         if (profile.status === 'Isento Total') return 0;
@@ -174,14 +174,14 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
             return baseFee * (1 - discount / 100);
         }
         return baseFee;
-    };
+    }, []);
 
-    const getMonthlyFeeForStudent = (student: Student | null) => {
+    const getMonthlyFeeForStudent = React.useCallback((student: Student | null) => {
         if (!student || !student.desiredClass) return financialSettings.monthlyFee;
         const specificFee = financialSettings.classSpecificFees?.find(c => c.classLevel === student.desiredClass);
         const baseFee = specificFee ? specificFee.monthlyFee : financialSettings.monthlyFee;
         return getDiscountedFee(student, baseFee, 'Mensalidade');
-    };
+    }, [financialSettings.monthlyFee, financialSettings.classSpecificFees, getDiscountedFee]);
 
     const getPenaltyAmount = (): number => {
         if (transactionType !== 'Mensalidade' || !activeYear || !selectedStudent) return 0;
@@ -194,7 +194,7 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
         return 0;
     };
 
-    const getMonthlyFinancialStatus = (student: Student, year: number, month: number) => {
+    const getMonthlyFinancialStatus = React.useCallback((student: Student, year: number, month: number) => {
         const matriculationDate = new Date(student.matriculationDate);
         const matriculationMonth = matriculationDate.getMonth() + 1;
         const matriculationYear = matriculationDate.getFullYear();
@@ -228,9 +228,10 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
             totalRequired,
             remaining: Math.max(0, totalRequired - totalPaid),
             isFullyPaid: totalPaid >= totalRequired - 1, 
-            isPartiallyPaid: totalPaid > 0 && totalPaid < totalRequired - 1
+            isPartiallyPaid: totalPaid > 0 && totalPaid < totalRequired - 1,
+            penalty
         };
-    };
+    }, [financialSettings.latePaymentPenaltyPercent, getMonthlyFeeForStudent, isPaymentLate]);
 
     const calculateTransactionTotal = () => {
         let total = 0;
@@ -406,7 +407,7 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
             }
         }
         return statusList;
-    }, [selectedStudent, activeYear, academicYears, financialSettings.monthlyPaymentLimitDay, financialSettings.monthlyFee, financialSettings.latePaymentPenaltyPercent]);
+    }, [selectedStudent, activeYear, academicYears, financialSettings.monthlyPaymentLimitDay, financialSettings.monthlyFee, financialSettings.latePaymentPenaltyPercent, getMonthlyFinancialStatus]);
 
 
     return (
@@ -443,7 +444,6 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[200px]">Nome</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Classe</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Pago ({activeYear})</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Saldo Final</th>
                             <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase sticky right-0 bg-gray-50">Ações</th>
                         </tr>
                     </thead>
@@ -468,16 +468,6 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
                                 <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{student.desiredClass}</td>
                                 <td className="px-6 py-4 text-right text-sm font-bold text-green-600 whitespace-nowrap">
                                     {formatPrice(getStudentTotalPaid(student))}
-                                </td>
-                                <td className="px-6 py-4 text-right text-sm font-bold whitespace-nowrap">
-                                    {(() => {
-                                        const { balance, status } = getStudentBalance(student);
-                                        return (
-                                            <span className={status === 'Devedor' ? 'text-red-600' : 'text-green-600'}>
-                                                {formatCurrency(balance, financialSettings.currency)}
-                                            </span>
-                                        );
-                                    })()}
                                 </td>
                                 <td className="px-6 py-4 text-center sticky right-0 bg-white shadow-[-5px_0_10px_-5px_rgba(0,0,0,0.1)] md:shadow-none">
                                     <button 

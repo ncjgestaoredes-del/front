@@ -1,5 +1,5 @@
 
-import { PaymentRecord, SchoolSettings, Student, Subject, Turma, FinancialSettings, ExtraCharge, Grade, ExamResult, AcademicYear } from "../types";
+import { PaymentRecord, SchoolSettings, Student, Subject, Turma, FinancialSettings, ExtraCharge, Grade, ExamResult, AcademicYear, User, DayOfWeek } from "../types";
 import { getStudentFinancialLedger, LedgerItem } from "../src/financialUtils";
 
 export interface PrintOptions {
@@ -963,7 +963,8 @@ export const printTurmaAttendanceList = (
         return `<th style="width: 20px; font-size: 8px; ${isInvalidDay ? 'background-color: #eee;' : ''}">${day}</th>`;
     }).join('');
     
-    const getAttendanceSymbol = (status?: string) => {
+    const getAttendanceSymbol = (status?: string, justification?: string) => {
+        if (status === 'Ausente' && justification) return 'J';
         switch (status) {
             case 'Presente': return 'P';
             case 'Ausente': return 'A';
@@ -973,6 +974,11 @@ export const printTurmaAttendanceList = (
     };
 
     const rowsHtml = students.map((s, index) => {
+        let countP = 0;
+        let countA = 0;
+        let countT = 0;
+        let countJ = 0;
+
         const dayCells = Array.from({ length: 31 }, (_, i) => {
             const day = i + 1;
             if (day > daysInMonth) return `<td style="border: 1px solid #ccc; background-color: #eee;"></td>`;
@@ -980,10 +986,16 @@ export const printTurmaAttendanceList = (
             // Format date as YYYY-MM-DD
             const dateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const record = s.attendance?.find(a => a.date === dateStr);
-            const symbol = getAttendanceSymbol(record?.status);
+            const symbol = getAttendanceSymbol(record?.status, record?.justification);
             
+            if (symbol === 'P') countP++;
+            if (symbol === 'A') countA++;
+            if (symbol === 'T') countT++;
+            if (symbol === 'J') countJ++;
+
             let color = '#333';
             if (symbol === 'A') color = '#ef4444';
+            if (symbol === 'J') color = '#3b82f6';
             if (symbol === 'T') color = '#f59e0b';
             if (symbol === 'P') color = '#10b981';
 
@@ -995,6 +1007,10 @@ export const printTurmaAttendanceList = (
                 <td style="text-align: center; font-size: 9px;">${index + 1}</td>
                 <td style="padding: 4px 8px; font-size: 10px; white-space: nowrap;">${s.name}</td>
                 ${dayCells}
+                <td style="text-align: center; font-size: 9px; font-weight: bold; background: #f0fff4;">${countP}</td>
+                <td style="text-align: center; font-size: 9px; font-weight: bold; background: #fff5f5; color: #ef4444;">${countA}</td>
+                <td style="text-align: center; font-size: 9px; font-weight: bold; background: #eff6ff; color: #3b82f6;">${countJ}</td>
+                <td style="text-align: center; font-size: 9px; font-weight: bold; background: #fffbeb; color: #f59e0b;">${countT}</td>
             </tr>
         `;
     }).join('');
@@ -1051,6 +1067,10 @@ export const printTurmaAttendanceList = (
                         <th style="width: 30px; font-size: 9px;">Nº</th>
                         <th style="text-align: left; padding-left: 10px; font-size: 10px;">Nome Completo do Aluno</th>
                         ${daysHeader}
+                        <th style="width: 25px; font-size: 8px; background: #e6fffa;">P</th>
+                        <th style="width: 25px; font-size: 8px; background: #fff5f5;">A</th>
+                        <th style="width: 25px; font-size: 8px; background: #eff6ff;">J</th>
+                        <th style="width: 25px; font-size: 8px; background: #fffbeb;">T</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1066,6 +1086,160 @@ export const printTurmaAttendanceList = (
 
             <div style="margin-top: 20px; font-size: 8px; text-align: center; color: #888;">
                 Legenda: P - Presente | A - Ausente | J - Justificada | T - Atraso
+            </div>
+
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+    `;
+
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(documentHtml);
+        win.document.close();
+    }
+};
+
+export const printSchedule = (
+    turma: Turma,
+    subjects: Subject[],
+    users: User[],
+    schoolSettings: SchoolSettings
+) => {
+    const logoHtml = schoolSettings.schoolLogo 
+        ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 60px; max-width: 60px;" />` 
+        : '<div style="width: 60px; height: 60px; background: #eee; border-radius: 50%;"></div>';
+
+    const DAYS: DayOfWeek[] = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    
+    const lessonDuration = schoolSettings.lessonDurationMinutes || 45;
+    const breakDuration = schoolSettings.breakDurationMinutes || 15;
+
+    const getTimeSlots = () => {
+        const slots: { start: string, end: string }[] = [];
+        let startTime = '07:30';
+        let numLessons = 6;
+
+        if (turma.shift === 'Manhã') {
+            startTime = '07:30';
+        } else if (turma.shift === 'Tarde') {
+            startTime = '13:00';
+        } else {
+            startTime = '18:00';
+            numLessons = 5;
+        }
+
+        let currentMinutes = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1]);
+
+        for (let i = 0; i < numLessons; i++) {
+            const startH = Math.floor(currentMinutes / 60).toString().padStart(2, '0');
+            const startM = (currentMinutes % 60).toString().padStart(2, '0');
+            const startStr = `${startH}:${startM}`;
+
+            currentMinutes += lessonDuration;
+
+            const endH = Math.floor(currentMinutes / 60).toString().padStart(2, '0');
+            const endM = (currentMinutes % 60).toString().padStart(2, '0');
+            const endStr = `${endH}:${endM}`;
+
+            slots.push({ start: startStr, end: endStr });
+
+            if (i === 2) {
+                currentMinutes += breakDuration;
+            }
+        }
+        return slots;
+    };
+
+    const timeSlots = getTimeSlots();
+    const schedule = turma.schedule || [];
+
+    const getEntry = (day: DayOfWeek, startTime: string) => {
+        return schedule.find(e => e.dayOfWeek === day && e.startTime === startTime);
+    };
+
+    const rowsHtml = timeSlots.map(slot => {
+        const dayCells = DAYS.map(day => {
+            const entry = getEntry(day, slot.start);
+            const subject = entry ? subjects.find(s => s.id === entry.subjectId) : null;
+            const teacher = entry ? users.find(u => u.id === entry.teacherId) : null;
+
+            return `
+                <td style="border: 1px solid #ccc; padding: 8px; text-align: center; height: 50px; vertical-align: middle;">
+                    ${entry ? `
+                        <div style="font-weight: bold; font-size: 10px;">${subject?.name || 'Disciplina'}</div>
+                        <div style="font-size: 8px; color: #666;">Prof. ${teacher?.name.split(' ')[0] || 'N/A'}</div>
+                    ` : ''}
+                </td>
+            `;
+        }).join('');
+
+        return `
+            <tr>
+                <td style="border: 1px solid #ccc; padding: 8px; text-align: center; background: #f9f9f9; font-weight: bold; font-size: 10px;">
+                    ${slot.start} - ${slot.end}
+                </td>
+                ${dayCells}
+            </tr>
+        `;
+    }).join('');
+
+    const documentHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Horário Escolar - ${turma.name}</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; }
+                .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #444; padding-bottom: 10px; }
+                .school-info { text-align: right; }
+                .school-name { font-size: 18px; font-weight: bold; margin: 0; text-transform: uppercase; }
+                .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 15px 0; text-transform: uppercase; text-decoration: underline; }
+                .class-info { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 11px; font-weight: bold; background: #f5f5f5; padding: 8px; border: 1px solid #ddd; }
+                
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+                th, td { border: 1px solid #666; padding: 4px; }
+                th { background-color: #f0f0f0; font-weight: bold; font-size: 10px; }
+                
+                @media print {
+                    @page { size: landscape; margin: 1cm; }
+                    body { padding: 0; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="logo">${logoHtml}</div>
+                <div class="school-info">
+                    <div class="school-name">${schoolSettings.schoolName || 'Instituição de Ensino'}</div>
+                    <div style="font-size: 10px;">Ano Lectivo: ${turma.academicYear}</div>
+                </div>
+            </div>
+
+            <div class="doc-title">Horário Escolar Semanal</div>
+            
+            <div class="class-info">
+                <span>TURMA: ${turma.name}</span>
+                <span>CLASSE: ${turma.classLevel}</span>
+                <span>TURNO: ${turma.shift}</span>
+                <span>SALA: ${turma.room || 'N/A'}</span>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 100px;">Horário</th>
+                        ${DAYS.map(day => `<th>${day}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+
+            <div style="margin-top: 40px; display: flex; justify-content: space-around; font-size: 10px;">
+                <div style="border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px;">O Director de Turma</div>
+                <div style="border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px;">A Direcção</div>
             </div>
 
             <script>window.onload = function() { window.print(); }</script>

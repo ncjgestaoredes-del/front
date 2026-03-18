@@ -72,18 +72,26 @@ export const getStudentFinancialLedger = (
         };
 
         // A. Enrollment / Renewal
+        // Check if there are payments for these specific types to avoid double-debiting 
+        // and to allow the payment-based debit logic to take precedence for matching amounts.
+        const hasMatriculaPayment = student.payments?.some(p => p.academicYear === year && (p.type === 'Matrícula' || p.items?.some(it => it.item.includes('Matrícula'))));
+        const hasRenovacaoPayment = student.payments?.some(p => p.academicYear === year && (p.type === 'Renovação' || p.items?.some(it => it.item.includes('Renovação'))));
+        const hasExamPayment = student.payments?.some(p => p.academicYear === year && (p.type === 'Taxa de Exames' || p.items?.some(it => it.item.includes('Exame'))));
+
         if (matriculationYear === year) {
-            const fee = getFee('Matrícula', enrollmentFeeBase);
-            if (fee > 0) {
-                ledger.push({
-                    date: student.matriculationDate,
-                    description: 'Matrícula / Inscrição',
-                    debit: fee,
-                    credit: 0,
-                    type: 'charge'
-                });
+            if (!hasMatriculaPayment) {
+                const fee = getFee('Matrícula', enrollmentFeeBase);
+                if (fee > 0) {
+                    ledger.push({
+                        date: student.matriculationDate,
+                        description: 'Matrícula / Inscrição',
+                        debit: fee,
+                        credit: 0,
+                        type: 'charge'
+                    });
+                }
             }
-            if (financialSettings.annualExamFee) {
+            if (financialSettings.annualExamFee && !hasExamPayment) {
                 ledger.push({
                     date: student.matriculationDate,
                     description: 'Taxa de Exames Anual',
@@ -93,17 +101,19 @@ export const getStudentFinancialLedger = (
                 });
             }
         } else if (matriculationYear < year && student.status !== 'Inativo') {
-            const fee = getFee('Renovação', renewalFeeBase);
-            if (fee > 0) {
-                ledger.push({
-                    date: `${year}-01-15`,
-                    description: 'Renovação de Matrícula',
-                    debit: fee,
-                    credit: 0,
-                    type: 'charge'
-                });
+            if (!hasRenovacaoPayment) {
+                const fee = getFee('Renovação', renewalFeeBase);
+                if (fee > 0) {
+                    ledger.push({
+                        date: `${year}-01-15`,
+                        description: 'Renovação de Matrícula',
+                        debit: fee,
+                        credit: 0,
+                        type: 'charge'
+                    });
+                }
             }
-            if (financialSettings.annualExamFee) {
+            if (financialSettings.annualExamFee && !hasExamPayment) {
                 ledger.push({
                     date: `${year}-01-15`,
                     description: 'Taxa de Exames Anual',
@@ -191,18 +201,37 @@ export const getStudentFinancialLedger = (
         if (student.payments) {
             student.payments.forEach((p: PaymentRecord) => {
                 if (p.academicYear === year) {
-                    // On-demand charges (Uniforms, Materials, etc.)
-                    if (['Uniforme', 'Material', 'Taxa de Transferência'].includes(p.type)) {
-                        ledger.push({
-                            date: p.date,
-                            description: p.description || p.type,
-                            debit: p.amount,
-                            credit: 0,
-                            type: 'charge'
+                    // 1. Create debits for items in this payment
+                    if (p.items && p.items.length > 0) {
+                        p.items.forEach(item => {
+                            // Debit everything except Mensalidade and Extra Charges (which are handled elsewhere)
+                            const isMensalidade = item.item.toLowerCase().includes('mensalidade');
+                            const isExtraCharge = p.type === 'Multa/Danos';
+                            
+                            if (!isMensalidade && !isExtraCharge) {
+                                ledger.push({
+                                    date: p.date,
+                                    description: item.item,
+                                    debit: item.value,
+                                    credit: 0,
+                                    type: 'charge'
+                                });
+                            }
                         });
+                    } else {
+                        // Fallback for payments without items (old data or simple payments)
+                        if (['Matrícula', 'Renovação', 'Uniforme', 'Material', 'Taxa de Transferência', 'Taxa de Exames'].includes(p.type)) {
+                            ledger.push({
+                                date: p.date,
+                                description: p.description || p.type,
+                                debit: p.amount,
+                                credit: 0,
+                                type: 'charge'
+                            });
+                        }
                     }
 
-                    // The payment itself (Credit)
+                    // 2. The payment itself (Credit)
                     ledger.push({
                         date: p.date,
                         description: `Pagamento (${p.type}) - ${p.method}`,

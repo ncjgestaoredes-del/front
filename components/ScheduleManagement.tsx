@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Turma, Subject, User, ScheduleEntry, DayOfWeek, UserRole, SchoolSettings } from '../types';
 import { CalendarIcon, TrashIcon, PlusIcon, SparklesIcon, PrinterIcon, CloseIcon, EditIcon } from './icons/IconComponents';
+import { printSchedule } from './ReceiptUtils';
 
 interface ScheduleManagementProps {
     turma: Turma;
@@ -165,7 +166,7 @@ const ScheduleManagement: React.FC<ScheduleManagementProps> = ({ turma, subjects
     };
 
     const handlePrint = () => {
-        window.print();
+        printSchedule(turma, subjects, users, settings);
     };
 
     return (
