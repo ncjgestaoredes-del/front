@@ -71,12 +71,32 @@ export const getStudentFinancialLedger = (
             return baseValue;
         };
 
+        // Helper to normalize strings for comparison (remove accents and lowercase)
+        const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
         // A. Enrollment / Renewal
         // Check if there are payments for these specific types to avoid double-debiting 
         // and to allow the payment-based debit logic to take precedence for matching amounts.
-        const hasMatriculaPayment = student.payments?.some(p => p.academicYear === year && (p.type === 'Matrícula' || p.items?.some(it => it.item.includes('Matrícula'))));
-        const hasRenovacaoPayment = student.payments?.some(p => p.academicYear === year && (p.type === 'Renovação' || p.items?.some(it => it.item.includes('Renovação'))));
-        const hasExamPayment = student.payments?.some(p => p.academicYear === year && (p.type === 'Taxa de Exames' || p.items?.some(it => it.item.includes('Exame'))));
+        const hasMatriculaPayment = student.payments?.some(p => 
+            p.academicYear === year && (
+                normalize(p.type || '').includes('matricula') || 
+                p.items?.some(it => normalize(it.item).includes('matricula'))
+            )
+        );
+        
+        const hasRenovacaoPayment = student.payments?.some(p => 
+            p.academicYear === year && (
+                normalize(p.type || '').includes('renovacao') || 
+                p.items?.some(it => normalize(it.item).includes('renovacao'))
+            )
+        );
+
+        const hasExamPayment = student.payments?.some(p => 
+            p.academicYear === year && (
+                normalize(p.type || '').includes('exame') || 
+                p.items?.some(it => normalize(it.item).includes('exame'))
+            )
+        );
 
         if (matriculationYear === year) {
             if (!hasMatriculaPayment) {
@@ -100,7 +120,7 @@ export const getStudentFinancialLedger = (
                     type: 'charge'
                 });
             }
-        } else if (matriculationYear < year && student.status !== 'Inativo') {
+        } else if (matriculationYear < year && student.status !== 'Inativo' && student.status !== 'Transferido' && year <= now.getFullYear()) {
             if (!hasRenovacaoPayment) {
                 const fee = getFee('Renovação', renewalFeeBase);
                 if (fee > 0) {

@@ -324,7 +324,8 @@ const StudentInfoCard: React.FC<{
         return calculateStudentFinancialSummary(student, academicYears, financialSettings).balance;
     }, [student, academicYears, financialSettings]);
 
-    const hasDebt = totalBalance < 0;
+    // Use a small tolerance (-1) to avoid blocking for tiny rounding errors or floating point issues
+    const hasDebt = totalBalance < -1;
 
     const formatCurrency = (val: number) => {
         return val.toLocaleString('pt-MZ', { style: 'currency', currency: financialSettings.currency || 'MZN' });
