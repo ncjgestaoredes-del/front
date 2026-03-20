@@ -52,6 +52,7 @@ interface DashboardProps {
   notifications: AppNotification[];
   onAddNotifications: (notifications: AppNotification[]) => void;
   onMarkNotificationAsRead: (id: string) => void;
+  onDeleteNotifications: (ids: string[]) => void;
   requests: SchoolRequest[];
   onRequestsChange: (requests: SchoolRequest[]) => void;
 }
@@ -75,11 +76,143 @@ const viewTitles: Record<View, string> = {
 };
 
 const Dashboard: React.FC<DashboardProps> = (props) => {
-  const { user, onLogout, onUpdateCurrentUser, users, onUsersChange, students, onStudentsChange, onResetApp, onClearStudents, academicYears, onAcademicYearsChange, schoolSettings, onSchoolSettingsChange, financialSettings, onFinancialSettingsChange, turmas, onTurmasChange, expenses, onExpensesChange, topics, onTopicsChange, messages, onMessagesChange, notifications, onAddNotifications, onMarkNotificationAsRead, requests, onRequestsChange } = props;
+  const { user, onLogout, onUpdateCurrentUser, users, onUsersChange, students, onStudentsChange, onResetApp, onClearStudents, academicYears, onAcademicYearsChange, schoolSettings, onSchoolSettingsChange, financialSettings, onFinancialSettingsChange, turmas, onTurmasChange, expenses, onExpensesChange, topics, onTopicsChange, messages, onMessagesChange, notifications, onAddNotifications, onMarkNotificationAsRead, onDeleteNotifications, requests, onRequestsChange } = props;
   
   const [activeView, setActiveView] = useState<View>('painel');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [financialTab, setFinancialTab] = useState<'payment' | 'setup' | 'records' | 'daily' | 'expenses'>('payment');
+
+  // Notificações Automáticas (Aniversários e Faltas)
+  React.useEffect(() => {
+    if (!students.length || !turmas.length || !users.length) return;
+
+    const newNotifications: AppNotification[] = [];
+    const notificationsToDelete: string[] = [];
+    const today = new Date();
+    const currentYear = today.getFullYear();
+
+    students.forEach(student => {
+        // 1. Aniversários
+        if (student.birthDate) {
+            const bday = new Date(student.birthDate);
+            const thisYearBday = new Date(currentYear, bday.getMonth(), bday.getDate());
+            
+            const diffTime = thisYearBday.getTime() - today.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            // Notificar se faltar 7 dias ou menos (e o aniversário ainda não passou hoje)
+            if (diffDays >= 0 && diffDays <= 7) {
+                const studentTurma = turmas.find(t => t.studentIds.includes(student.id));
+                if (studentTurma) {
+                    const teacherIds = studentTurma.teachers?.map(ta => ta.teacherId) || [];
+                    teacherIds.forEach(tId => {
+                        const notifId = `bday-${student.id}-${currentYear}-${tId}`;
+                        if (!notifications.some(n => n.id === notifId)) {
+                            newNotifications.push({
+                                id: notifId,
+                                userId: tId,
+                                type: 'admin_alert',
+                                title: 'Próximo Aniversário',
+                                message: `O seu aluno ${student.name} fará anos no dia ${thisYearBday.toLocaleDateString()}.`,
+                                read: false,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+                    });
+                }
+            } else if (diffDays < 0) {
+                // Se o aniversário já passou, remover as notificações deste ano
+                const studentTurma = turmas.find(t => t.studentIds.includes(student.id));
+                if (studentTurma) {
+                    const teacherIds = studentTurma.teachers?.map(ta => ta.teacherId) || [];
+                    teacherIds.forEach(tId => {
+                        const notifId = `bday-${student.id}-${currentYear}-${tId}`;
+                        if (notifications.some(n => n.id === notifId)) {
+                            notificationsToDelete.push(notifId);
+                        }
+                    });
+                }
+            }
+        }
+
+        // 2. Faltas
+        const activeYear = academicYears.find(y => y.status === 'Em Curso')?.year || currentYear;
+        const yearAbsences = student.attendance?.filter(a => 
+            a.status === 'Ausente' && 
+            !a.isWaived && 
+            new Date(a.date).getFullYear() === activeYear
+        ) || [];
+
+        const absenceCount = yearAbsences.length;
+
+        if (absenceCount > 15) {
+            const studentTurma = turmas.find(t => t.studentIds.includes(student.id));
+            const guardian = users.find(u => u.name === student.guardianName && u.role === UserRole.ENCARREGADO);
+            const admins = users.filter(u => u.role === UserRole.ADMIN || u.role === UserRole.SECRETARIA || u.role === UserRole.SUPER_ADMIN);
+
+            // Notificação de Aviso (15 faltas)
+            const baseNotifId15 = `abs-15-${student.id}-${activeYear}`;
+            const msg = `AVISO: O aluno ${student.name} atingiu ${absenceCount} faltas este ano.`;
+            
+            // Professores
+            studentTurma?.teachers?.forEach(ta => {
+                const fullId = `${baseNotifId15}-${ta.teacherId}`;
+                if (!notifications.some(n => n.id === fullId) && !newNotifications.some(n => n.id === fullId)) {
+                    newNotifications.push({ id: fullId, userId: ta.teacherId, type: 'admin_alert', title: 'Aviso de Faltas', message: msg, read: false, timestamp: new Date().toISOString() });
+                }
+            });
+            // Encarregado
+            if (guardian) {
+                const fullId = `${baseNotifId15}-${guardian.id}`;
+                if (!notifications.some(n => n.id === fullId) && !newNotifications.some(n => n.id === fullId)) {
+                    newNotifications.push({ id: fullId, userId: guardian.id, type: 'admin_alert', title: 'Aviso de Faltas', message: msg, read: false, timestamp: new Date().toISOString() });
+                }
+            }
+            // Admins
+            admins.forEach(adm => {
+                const fullId = `${baseNotifId15}-${adm.id}`;
+                if (!notifications.some(n => n.id === fullId) && !newNotifications.some(n => n.id === fullId)) {
+                    newNotifications.push({ id: fullId, userId: adm.id, type: 'admin_alert', title: 'Aviso de Faltas', message: msg, read: false, timestamp: new Date().toISOString() });
+                }
+            });
+
+            // Notificação de Exclusão (31 faltas)
+            if (absenceCount > 30) {
+                const baseNotifId31 = `abs-31-${student.id}-${activeYear}`;
+                const msgExcl = `EXCLUSÃO: O aluno ${student.name} atingiu ${absenceCount} faltas e está excluído por regra. Deve contactar a direção.`;
+                
+                // Professores
+                studentTurma?.teachers?.forEach(ta => {
+                    const fullId = `${baseNotifId31}-${ta.teacherId}`;
+                    if (!notifications.some(n => n.id === fullId) && !newNotifications.some(n => n.id === fullId)) {
+                        newNotifications.push({ id: fullId, userId: ta.teacherId, type: 'admin_alert', title: 'Exclusão por Faltas', message: msgExcl, read: false, timestamp: new Date().toISOString() });
+                    }
+                });
+                // Encarregado
+                if (guardian) {
+                    const fullId = `${baseNotifId31}-${guardian.id}`;
+                    if (!notifications.some(n => n.id === fullId) && !newNotifications.some(n => n.id === fullId)) {
+                        newNotifications.push({ id: fullId, userId: guardian.id, type: 'admin_alert', title: 'Exclusão por Faltas', message: msgExcl, read: false, timestamp: new Date().toISOString() });
+                    }
+                }
+                // Admins
+                admins.forEach(adm => {
+                    const fullId = `${baseNotifId31}-${adm.id}`;
+                    if (!notifications.some(n => n.id === fullId) && !newNotifications.some(n => n.id === fullId)) {
+                        newNotifications.push({ id: fullId, userId: adm.id, type: 'admin_alert', title: 'Exclusão por Faltas', message: msgExcl, read: false, timestamp: new Date().toISOString() });
+                    }
+                });
+            }
+        }
+    });
+
+    if (newNotifications.length > 0) {
+        onAddNotifications(newNotifications);
+    }
+    if (notificationsToDelete.length > 0) {
+        onDeleteNotifications(notificationsToDelete);
+    }
+  }, [students, turmas, users, academicYears, onAddNotifications, onDeleteNotifications]);
 
   const visibleStudents = useMemo(() => {
       if (user.role === UserRole.PROFESSOR) {
@@ -129,6 +262,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
                             messages={messages}
                             onMessagesChange={onMessagesChange}
                             onAddNotifications={onAddNotifications}
+                            turmas={turmas}
                         />
                     </main>
                 </div>
@@ -158,7 +292,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
         case 'painel':
             return <VacancyOverview turmas={turmas} schoolSettings={schoolSettings} students={students} academicYears={academicYears} />;
         case 'reuniao':
-            return <InternalChat currentUser={user} users={users} topics={topics} onTopicsChange={onTopicsChange} messages={messages} onMessagesChange={onMessagesChange} onAddNotifications={onAddNotifications} />;
+            return <InternalChat currentUser={user} users={users} topics={topics} onTopicsChange={onTopicsChange} messages={messages} onMessagesChange={onMessagesChange} onAddNotifications={onAddNotifications} turmas={turmas} />;
         case 'solicitacoes':
             return <RequestManagement currentUser={user} users={users} requests={requests} onRequestsChange={onRequestsChange} onAddNotifications={onAddNotifications} />;
         case 'transferencias':
@@ -222,7 +356,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
              }
              return <div className="p-4 text-center text-gray-500 font-bold">Acesso negado.</div>;
         case 'alunos':
-            return <StudentList user={user} users={visibleUsers} onUsersChange={onUsersChange} students={visibleStudents} onStudentsChange={onStudentsChange} onAddNotifications={onAddNotifications} financialSettings={financialSettings} academicYears={academicYears} />;
+            return <StudentList user={user} users={visibleUsers} onUsersChange={onUsersChange} students={visibleStudents} onStudentsChange={onStudentsChange} onAddNotifications={onAddNotifications} financialSettings={financialSettings} academicYears={academicYears} schoolSettings={schoolSettings} />;
         case 'turmas':
              return <TurmaManagement turmas={turmas} onTurmasChange={onTurmasChange} students={students} academicYears={academicYears} schoolSettings={schoolSettings} users={users} currentUser={user} onStudentsChange={onStudentsChange} onAddNotifications={onAddNotifications} />;
         case 'professores':

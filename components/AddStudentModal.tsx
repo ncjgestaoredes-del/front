@@ -91,16 +91,6 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose, onAd
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) {
-        setFormData(initialFormData);
-        setPreview(null);
-        setError('');
-        setGuardianSearch('');
-        setSelectedGuardianResults(false);
-    }
-  }, [isOpen]);
-
   const handleChange = useCallback((e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     if (type === 'checkbox' && 'checked' in e.target) {
@@ -109,6 +99,15 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose, onAd
         setFormData(prev => ({ ...prev, [name]: value }));
     }
   }, []);
+
+  const handleClose = useCallback(() => {
+    setFormData(initialFormData);
+    setPreview(null);
+    setError('');
+    setGuardianSearch('');
+    setSelectedGuardianResults(false);
+    onClose();
+  }, [onClose]);
 
   const handleFinancialChange = (field: keyof FinancialProfile, value: any) => {
       setFormData(prev => ({
@@ -209,6 +208,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose, onAd
         }));
         if (notifications.length > 0) onAddNotifications(notifications);
     }
+    handleClose();
   };
 
   if (!isOpen) return null;
@@ -224,7 +224,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose, onAd
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
           <header className="flex items-center justify-between p-4 border-b">
             <h2 className="text-xl font-bold text-gray-800">Cadastrar Novo Aluno</h2>
-            <button onClick={onClose} className="p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800">
+            <button onClick={handleClose} className="p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800">
               <CloseIcon className="w-6 h-6" />
             </button>
           </header>
@@ -476,7 +476,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose, onAd
 
             <footer className="flex items-center justify-end p-4 border-t bg-gray-50 rounded-b-2xl">
               {error && <p className="text-red-500 text-sm mr-auto">{error}</p>}
-              <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 mr-2">
+              <button type="button" onClick={handleClose} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 mr-2">
                 Cancelar
               </button>
               <button type="submit" className="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">

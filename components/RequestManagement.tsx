@@ -363,8 +363,7 @@ const RequestManagement: React.FC<RequestManagementProps> = ({ currentUser, user
                                             <label className="block text-sm font-medium text-gray-600 mb-1">Novo Status</label>
                                             <select 
                                                 value={statusUpdate}
-                                                // @ts-ignore
-                                                onChange={(e) => setStatusUpdate(e.target.value)}
+                                                onChange={(e) => setStatusUpdate(e.target.value as any)}
                                                 className="w-full border rounded-lg p-2 bg-white"
                                             >
                                                 <option value="Pendente">Pendente</option>

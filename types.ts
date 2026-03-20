@@ -63,7 +63,7 @@ export type StudentStatus = 'Ativo' | 'Inativo' | 'Transferido' | 'Suspenso';
 export interface StudentDocuments { photos: boolean; cedula: boolean; bi: boolean; drivingLicense: boolean; reportCard: boolean; transcript: boolean; transferNote: boolean; }
 export interface Grade { subject: string; period: '1º Trimestre' | '2º Trimestre' | '3º Trimestre'; grade?: number; acs1?: number; acs2?: number; at?: number; academicYear: number; }
 export interface ExamResult { subject: string; grade: number; academicYear: number; }
-export interface AttendanceRecord { date: string; status: 'Presente' | 'Ausente' | 'Atrasado'; justification?: string; }
+export interface AttendanceRecord { date: string; status: 'Presente' | 'Ausente' | 'Atrasado' | 'Justificada'; justification?: string; isWaived?: boolean; adminNote?: string; }
 export interface BehaviorNote { date: string; note: string; type: 'Positivo' | 'Negativo'; severity?: 'Leve' | 'Moderada' | 'Grave'; measureTaken?: string; }
 export interface BehaviorEvaluation { period: '1º Trimestre' | '2º Trimestre' | '3º Trimestre'; academicYear: number; scores: { assiduidade: number; disciplina: number; participacao: number; responsabilidade: number; socializacao: number; atitude: number; organizacao: number; }; percentage: number; }
 export type AcademicYearStatus = 'Planeado' | 'Em Curso' | 'Concluído';
@@ -79,7 +79,7 @@ export type ExpenseCategory = 'Salários' | 'Água' | 'Energia' | 'Internet/Tele
 export interface ExpenseRecord { id: string; date: string; category: ExpenseCategory; amount: number; description: string; registeredBy: string; studentId?: string; isChargeable?: boolean; }
 export type FinancialStatusType = 'Normal' | 'Isento Total' | 'Sem Multa' | 'Desconto Parcial';
 export interface FinancialProfile { status: FinancialStatusType; discountPercentage?: number; affectedTypes?: PaymentType[]; justification?: string; }
-export interface Student { id: string; name: string; gender: 'M' | 'F'; birthDate: string; profilePictureUrl?: string; fatherName: string; motherName: string; guardianName: string; guardianContact: string; guardianRelationship: string; address: string; healthInfo: string; desiredClass: string; isTransferred: boolean; previousSchool?: string; previousSchoolFinalGrade?: string; documents: StudentDocuments; matriculationDate: string; status: StudentStatus; suspensionDate?: string; grades?: Grade[]; examGrades?: ExamResult[]; attendance?: AttendanceRecord[]; behavior?: BehaviorNote[]; behaviorEvaluations?: BehaviorEvaluation[]; payments?: PaymentRecord[]; extraCharges?: ExtraCharge[]; financialProfile?: FinancialProfile; }
+export interface Student { id: string; name: string; gender: 'M' | 'F'; birthDate: string; profilePictureUrl?: string; fatherName: string; motherName: string; guardianName: string; guardianContact: string; guardianRelationship: string; address: string; healthInfo: string; desiredClass: string; isTransferred: boolean; previousSchool?: string; previousSchoolFinalGrade?: string; documents: StudentDocuments; matriculationDate: string; status: StudentStatus; suspensionDate?: string; grades?: Grade[]; examGrades?: ExamResult[]; attendance?: AttendanceRecord[]; behavior?: BehaviorNote[]; behaviorEvaluations?: BehaviorEvaluation[]; payments?: PaymentRecord[]; extraCharges?: ExtraCharge[]; financialProfile?: FinancialProfile; failedByAbsences?: boolean; placeOfBirth?: string; idDocumentType?: string; idDocumentNumber?: string; nationality?: string; shift?: string; guardianEmail?: string; turmaName?: string; }
 export interface UniformItem { id: string; name: string; price: number; }
 export interface BookItem { id: string; title: string; classLevel: string; price: number; }
 export interface ClassSpecificFee { classLevel: string; enrollmentFee: number; renewalFee: number; monthlyFee: number; }
@@ -100,7 +100,7 @@ export interface ScheduleEntry {
 export interface TeacherAssignment { teacherId: string; subjectIds: string[]; isSubstitute?: boolean; justification?: string; }
 export interface Turma { id: string; name: string; academicYear: number; classLevel: string; shift: Shift; teachers: TeacherAssignment[]; studentIds: string[]; room?: string; schedule?: ScheduleEntry[]; }
 export interface DiscussionMessage { id: string; topicId: string; userId: string; content: string; timestamp: string; replyToId?: string; }
-export interface DiscussionTopic { id: string; title: string; createdBy: string; createdAt: string; participantIds: string[]; status: 'Open' | 'Closed'; }
+export interface DiscussionTopic { id: string; title: string; createdBy: string; createdAt: string; participantIds: string[]; status: 'Open' | 'Closed'; turmaId?: string; classLevel?: string; }
 export interface AppNotification { id: string; userId: string; type: 'message' | 'topic_invite' | 'admin_alert' | 'request_update'; title: string; message: string; read: boolean; timestamp: string; relatedId?: string; }
 export type RequestStatus = 'Pendente' | 'Em Análise' | 'Aprovado' | 'Concluído' | 'Rejeitado';
 export type RequestPriority = 'Baixa' | 'Normal' | 'Alta' | 'Urgente';

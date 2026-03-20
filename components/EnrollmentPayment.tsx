@@ -26,8 +26,11 @@ const months = [
 const paymentMethods: PaymentMethod[] = ['Numerário', 'Transferência Bancária', 'MPesa', 'e-Mola', 'mKesh', 'POS'];
 
 const EnrollmentPayment: React.FC<EnrollmentPaymentProps> = ({ students, onStudentsChange, financialSettings, academicYears, currentUser, users, onAddNotifications }) => {
+    const [selectedYear, setSelectedYear] = useState<number | ''>(() => {
+        const activeYear = academicYears.find(y => y.status === 'Em Curso' || y.status === 'Planeado');
+        return activeYear ? activeYear.year : '';
+    });
     const [selectedStudentId, setSelectedStudentId] = useState('');
-    const [selectedYear, setSelectedYear] = useState<number | ''>('');
     const [paymentType, setPaymentType] = useState<PaymentTypeOption>('new');
     const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('Numerário');
     const [selectedUniforms, setSelectedUniforms] = useState<Record<string, boolean>>({});
@@ -38,12 +41,6 @@ const EnrollmentPayment: React.FC<EnrollmentPaymentProps> = ({ students, onStude
     
     const [isSuccess, setIsSuccess] = useState(false);
     const [lastPayment, setLastPayment] = useState<PaymentRecord | null>(null);
-
-    // Set default year to current active one
-    useEffect(() => {
-        const activeYear = academicYears.find(y => y.status === 'Em Curso' || y.status === 'Planeado');
-        if (activeYear) setSelectedYear(activeYear.year);
-    }, [academicYears]);
 
     // Filter students who have NOT paid enrollment/renewal for the selected year
     const eligibleStudents = useMemo(() => {
@@ -58,15 +55,6 @@ const EnrollmentPayment: React.FC<EnrollmentPaymentProps> = ({ students, onStude
         });
     }, [students, selectedYear]);
 
-    // Clear selected student if they are no longer eligible (e.g. changing year)
-    useEffect(() => {
-        if (selectedStudentId && !eligibleStudents.find(s => s.id === selectedStudentId)) {
-            setSelectedStudentId('');
-            setSelectedUniforms({});
-            setSelectedBooks({});
-        }
-    }, [eligibleStudents, selectedStudentId]);
-
     const selectedStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
 
     // --- LÓGICA DE ALUNO ANTIGO vs NOVO ---
@@ -79,84 +67,41 @@ const EnrollmentPayment: React.FC<EnrollmentPaymentProps> = ({ students, onStude
         ) || false;
     }, [selectedStudent, selectedYear]);
 
-    // --- LÓGICA DE BLOQUEIO POR DÍVIDAS ANTERIORES ---
+    // Sync paymentType with isReturningStudent
+    useEffect(() => {
+        if (selectedStudent) {
+            setPaymentType(isReturningStudent ? 'renewal' : 'new');
+        }
+    }, [selectedStudent, isReturningStudent]);
+
+    // Clear selected student if they are no longer eligible (e.g. changing year)
+    useEffect(() => {
+        if (selectedStudentId && !eligibleStudents.find(s => s.id === selectedStudentId)) {
+            setSelectedStudentId('');
+            setSelectedUniforms({});
+            setSelectedBooks({});
+        }
+    }, [eligibleStudents, selectedStudentId]);
     const pastDebts = useMemo(() => {
-        if (!selectedStudent || !selectedYear || !isReturningStudent) return null;
-
-        const profile = selectedStudent.financialProfile || { status: 'Normal' };
-        if (profile.status === 'Isento Total') return null; // Isentos nunca têm bloqueio
-
+        if (!selectedStudent || !selectedYear) return null;
+        const previousYears = academicYears
+            .filter(y => y.year < Number(selectedYear))
+            .map(y => y.year);
+        
         const debts: number[] = [];
-        const matriculationYear = new Date(selectedStudent.matriculationDate).getFullYear();
-
-        // Verificar cada ano anterior, desde a matrícula até o ano anterior ao selecionado
-        academicYears.forEach(ay => {
-            if (ay.year < Number(selectedYear) && ay.year >= matriculationYear) {
-                // Calcular expectativa de pagamento para este ano passado
-                
-                // 1. Taxas Base (Renovação/Matrícula)
-                let yearObligation = 0;
-                let renewalFee = financialSettings.renewalFee;
-                let monthlyFee = financialSettings.monthlyFee;
-
-                // Aplicar descontos do perfil
-                if (profile.status === 'Desconto Parcial') {
-                    if (profile.affectedTypes?.includes('Renovação')) renewalFee *= (1 - (profile.discountPercentage || 0)/100);
-                    if (profile.affectedTypes?.includes('Mensalidade')) monthlyFee *= (1 - (profile.discountPercentage || 0)/100);
-                }
-
-                // Obrigação: Renovação/Matrícula
-                // Se o aluno trancou a matrícula, ele pagou a renovação no início do ano (supostamente).
-                // Vamos assumir que Matrícula/Renovação é sempre devida se o aluno esteve ativo em algum momento do ano.
-                yearObligation += renewalFee;
-
-                // Mensalidades: Calcular meses ativos
-                let monthsInYear = (ay.endMonth || 11) - (ay.startMonth || 2) + 1; // Default total
-                
-                // LÓGICA DE SUSPENSÃO:
-                if (selectedStudent.status === 'Suspenso' && selectedStudent.suspensionDate) {
-                    const suspDate = new Date(selectedStudent.suspensionDate);
-                    // Se foi suspenso neste ano passado
-                    if (suspDate.getFullYear() === ay.year) {
-                        // Meses devidos = Meses antes da suspensão
-                        // Ex: Start=2, Susp=5 (Maio). Deve: 2, 3, 4, 5. Total = 5 - 2 + 1 = 4.
-                        const activeMonthsCount = Math.max(0, (suspDate.getMonth() + 1) - (ay.startMonth || 2) + 1);
-                        monthsInYear = Math.min(monthsInYear, activeMonthsCount);
-                    } 
-                    // Se foi suspenso ANTES deste ano passado, a obrigação é ZERO (exceto talvez renovação se voltou? mas aqui estamos vendo passado)
-                    else if (suspDate.getFullYear() < ay.year) {
-                        monthsInYear = 0;
-                        yearObligation = 0; // Se estava suspenso o ano todo, não deve nada
-                    }
-                }
-
-                yearObligation += (monthlyFee * monthsInYear);
-
-                // Calcular Total Pago neste ano
-                const totalPaidInYear = selectedStudent.payments
-                    ?.filter(p => p.academicYear === ay.year && (p.type === 'Matrícula' || p.type === 'Renovação' || p.type === 'Mensalidade'))
-                    .reduce((acc, curr) => acc + curr.amount, 0) || 0;
-
-                // Tolerância de 500 meticais
-                if (yearObligation > 0 && (yearObligation - totalPaidInYear) > 500) {
-                    debts.push(ay.year);
+        previousYears.forEach(year => {
+            const hasEnrollment = selectedStudent.payments?.some(p => p.academicYear === year && (p.type === 'Matrícula' || p.type === 'Renovação'));
+            if (hasEnrollment) {
+                const monthlyPayments = selectedStudent.payments?.filter(p => p.academicYear === year && p.type === 'Mensalidade') || [];
+                if (monthlyPayments.length < 12) {
+                    debts.push(year);
                 }
             }
         });
-
+        
         return debts.length > 0 ? debts : null;
-    }, [selectedStudent, selectedYear, isReturningStudent, academicYears, financialSettings]);
+    }, [selectedStudent, selectedYear, academicYears]);
 
-    // Forçar o tipo de pagamento baseado no histórico
-    useEffect(() => {
-        if (selectedStudent) {
-            if (isReturningStudent) {
-                setPaymentType('renewal');
-            } else {
-                setPaymentType('new');
-            }
-        }
-    }, [selectedStudent, isReturningStudent]);
     // --------------------------------------
 
     const relevantBooks = useMemo(() => {
@@ -694,8 +639,7 @@ const EnrollmentPayment: React.FC<EnrollmentPaymentProps> = ({ students, onStude
                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Método de Pagamento</label>
                                 <select 
                                     value={selectedMethod} 
-                                    // @ts-ignore
-                                    onChange={e => setSelectedMethod(e.target.value)}
+                                    onChange={e => setSelectedMethod(e.target.value as any)}
                                     className="w-full p-2 border border-gray-300 rounded bg-white text-sm focus:ring-2 focus:ring-indigo-500"
                                 >
                                     {paymentMethods.map(m => (

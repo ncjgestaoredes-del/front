@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { Student, StudentStatus, User, UserRole, AppNotification, BehaviorNote, FinancialSettings, AcademicYear, PaymentType } from '../types';
+import { Student, StudentStatus, User, UserRole, AppNotification, BehaviorNote, FinancialSettings, AcademicYear, PaymentType, SchoolSettings, Subject } from '../types';
 import AddStudentModal from './AddStudentModal';
 import EditStudentModal from './EditStudentModal';
 import RegisterOccurrenceModal from './RegisterOccurrenceModal';
-import { EditIcon, ExclamationTriangleIcon, FilterIcon, CurrencyDollarIcon, LockClosedIcon } from './icons/IconComponents';
+import { EditIcon, ExclamationTriangleIcon, FilterIcon, CurrencyDollarIcon, LockClosedIcon, PrinterIcon, AcademicCapIcon, CheckBadgeIcon, ClipboardListIcon } from './icons/IconComponents';
+import { printStudentReportCard, printEnrollmentCertificate, printStudentEnrollmentForm } from './ReceiptUtils';
 
 const StatusBadge: React.FC<{ status: StudentStatus }> = ({ status }) => {
   const baseClasses = 'px-3 py-1 text-xs font-semibold rounded-full';
@@ -29,9 +30,10 @@ interface StudentListProps {
   onAddNotifications: (notifications: AppNotification[]) => void;
   financialSettings?: FinancialSettings;
   academicYears?: AcademicYear[];
+  schoolSettings?: SchoolSettings;
 }
 
-const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, students, onStudentsChange, onAddNotifications, financialSettings, academicYears }) => {
+const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, students, onStudentsChange, onAddNotifications, financialSettings, academicYears, schoolSettings }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StudentStatus | 'Todos'>('Todos');
   const [financialFilter, setFinancialFilter] = useState<string>('Todos');
@@ -329,6 +331,7 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
         onAddNotifications={onAddNotifications}
       />
       <EditStudentModal
+        key={editingStudent ? `edit-student-${editingStudent.id}` : 'edit-student-none'}
         isOpen={isEditModalOpen}
         onClose={handleCloseEditModal}
         student={editingStudent}
@@ -469,6 +472,52 @@ const StudentList: React.FC<StudentListProps> = ({ user, users, onUsersChange, s
                                             <LockClosedIcon className="w-5 h-5" />
                                         </button>
                                     )}
+
+                                    {/* Botões de Impressão de Relatórios */}
+                                    <div className="flex items-center space-x-2 border-l pl-3 ml-1 border-gray-200">
+                                        <button 
+                                            onClick={() => {
+                                                const currentAcademicYear = academicYears?.find(y => y.status === 'Em Curso') || academicYears?.[0];
+                                                const currentYear = currentAcademicYear?.year || new Date().getFullYear();
+                                                const subjects = currentAcademicYear?.subjectsByClass?.find(s => s.classLevel === student.desiredClass)?.subjects || [];
+                                                printStudentReportCard(
+                                                    student, 
+                                                    currentYear,
+                                                    subjects,
+                                                    schoolSettings || { totalClassrooms: 0, studentsPerClass: 0, shifts: 0 }
+                                                );
+                                            }}
+                                            className="text-indigo-500 hover:text-indigo-700"
+                                            title="Imprimir Boletim de Notas"
+                                        >
+                                            <AcademicCapIcon className="w-5 h-5" />
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                const currentAcademicYear = academicYears?.find(y => y.status === 'Em Curso') || academicYears?.[0];
+                                                const currentYear = currentAcademicYear?.year || new Date().getFullYear();
+                                                printEnrollmentCertificate(
+                                                    student, 
+                                                    currentYear,
+                                                    schoolSettings || { totalClassrooms: 0, studentsPerClass: 0, shifts: 0 }
+                                                );
+                                            }}
+                                            className="text-emerald-500 hover:text-emerald-700"
+                                            title="Imprimir Certificado de Matrícula"
+                                        >
+                                            <CheckBadgeIcon className="w-5 h-5" />
+                                        </button>
+                                        <button 
+                                            onClick={() => printStudentEnrollmentForm(
+                                                student, 
+                                                schoolSettings || { totalClassrooms: 0, studentsPerClass: 0, shifts: 0 }
+                                            )}
+                                            className="text-blue-500 hover:text-blue-700"
+                                            title="Imprimir Ficha de Matrícula"
+                                        >
+                                            <ClipboardListIcon className="w-5 h-5" />
+                                        </button>
+                                    </div>
                                 </>
                             )}
                         </div>

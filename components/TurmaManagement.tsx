@@ -64,9 +64,9 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
                 if (t.teachers) {
                     return t.teachers.some(assignment => assignment.teacherId === currentUser.id);
                 }
-                // @ts-ignore
+                // @ts-expect-error: Legacy field support
                 if (t.teacherIds) return t.teacherIds.includes(currentUser.id);
-                // @ts-ignore
+                // @ts-expect-error: Legacy field support
                 if (t.teacherId) return t.teacherId === currentUser.id;
                 
                 return false;
@@ -77,19 +77,14 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
     }, [turmas, yearFilter, currentUser]);
 
     const getTeacherDisplayInfo = (turma: Turma) => {
-        if (!turma.teachers && !// @ts-ignore
-            turma.teacherIds) return <span className="text-gray-400 italic">Sem professores</span>;
+        if (!turma.teachers && !(turma as any).teacherIds) return <span className="text-gray-400 italic">Sem professores</span>;
 
         let assignments = turma.teachers || [];
-        if (assignments.length === 0 && // @ts-ignore
-            turma.teacherIds) {
-             // @ts-ignore
-             assignments = turma.teacherIds.map((id: string) => ({ teacherId: id, subjectIds: [] }));
+        if (assignments.length === 0 && (turma as any).teacherIds) {
+             assignments = (turma as any).teacherIds.map((id: string) => ({ teacherId: id, subjectIds: [] }));
         }
-        if (assignments.length === 0 && // @ts-ignore
-             turma.teacherId) {
-             // @ts-ignore
-             assignments = [{ teacherId: turma.teacherId, subjectIds: [] }];
+        if (assignments.length === 0 && (turma as any).teacherId) {
+             assignments = [{ teacherId: (turma as any).teacherId, subjectIds: [] }];
         }
 
         if (assignments.length === 0) return <span className="text-gray-400 italic">Sem professores</span>;
@@ -154,6 +149,7 @@ const TurmaManagement: React.FC<TurmaManagementProps> = (props) => {
     return (
         <>
             <CreateTurmaModal
+                key={isModalOpen ? `open-${editingTurma?.id || 'new'}` : 'closed'}
                 isOpen={isModalOpen}
                 onClose={handleCloseModal}
                 onSave={handleSaveTurma}

@@ -23,61 +23,44 @@ interface TeacherAssignmentState {
 const CreateTurmaModal: React.FC<CreateTurmaModalProps> = (props) => {
     const { isOpen, onClose, onSave, existingTurma, turmas, students, academicYears, schoolSettings, users } = props;
 
-    const [academicYear, setAcademicYear] = useState<string>('');
-    const [classLevel, setClassLevel] = useState<string>('');
-    const [name, setName] = useState('');
-    const [room, setRoom] = useState('');
-    const [shift, setShift] = useState<Shift>('Manhã');
+    const [academicYear, setAcademicYear] = useState<string>(() => {
+        if (existingTurma) return existingTurma.academicYear.toString();
+        const activeYear = academicYears.find(ay => ay.status === 'Em Curso' || ay.status === 'Planeado');
+        return activeYear ? activeYear.year.toString() : '';
+    });
+    const [classLevel, setClassLevel] = useState<string>(existingTurma?.classLevel || '');
+    const [name, setName] = useState(existingTurma?.name || '');
+    const [room, setRoom] = useState(existingTurma?.room || '');
+    const [shift, setShift] = useState<Shift>(existingTurma?.shift || 'Manhã');
     
     // State to manage teachers and their subjects: { teacherId: { subjectIds, isSubstitute, justification } }
-    const [teacherAssignments, setTeacherAssignments] = useState<Record<string, TeacherAssignmentState>>({});
-    const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+    const [teacherAssignments, setTeacherAssignments] = useState<Record<string, TeacherAssignmentState>>(() => {
+        const assignments: Record<string, TeacherAssignmentState> = {};
+        if (existingTurma) {
+            if (existingTurma.teachers) {
+                existingTurma.teachers.forEach(t => {
+                    assignments[t.teacherId] = {
+                        subjectIds: t.subjectIds || [],
+                        isSubstitute: !!t.isSubstitute,
+                        justification: t.justification || ''
+                    };
+                });
+            } else {
+                // Legacy support
+                const legacyIds = (existingTurma as any).teacherIds || ((existingTurma as any).teacherId ? [(existingTurma as any).teacherId] : []);
+                legacyIds.forEach((id: string) => {
+                     assignments[id] = { subjectIds: [], isSubstitute: false, justification: '' };
+                });
+            }
+        }
+        return assignments;
+    });
+    const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set(existingTurma?.studentIds || []));
     const [error, setError] = useState('');
     const [expandedTeacherId, setExpandedTeacherId] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (isOpen) {
-            if (existingTurma) {
-                setAcademicYear(existingTurma.academicYear.toString());
-                setClassLevel(existingTurma.classLevel);
-                setName(existingTurma.name);
-                setRoom(existingTurma.room || '');
-                setShift(existingTurma.shift);
-                
-                // Reconstruct assignments map
-                const assignments: Record<string, TeacherAssignmentState> = {};
-                if (existingTurma.teachers) {
-                    existingTurma.teachers.forEach(t => {
-                        assignments[t.teacherId] = {
-                            subjectIds: t.subjectIds || [],
-                            isSubstitute: !!t.isSubstitute,
-                            justification: t.justification || ''
-                        };
-                    });
-                } else {
-                    // Legacy support
-                    // @ts-ignore
-                    const legacyIds = existingTurma.teacherIds || (existingTurma.teacherId ? [existingTurma.teacherId] : []);
-                    legacyIds.forEach((id: string) => {
-                         assignments[id] = { subjectIds: [], isSubstitute: false, justification: '' };
-                    });
-                }
-                setTeacherAssignments(assignments);
-                setSelectedStudentIds(new Set(existingTurma.studentIds));
-            } else {
-                const activeYear = academicYears.find(ay => ay.status === 'Em Curso' || ay.status === 'Planeado');
-                setAcademicYear(activeYear ? activeYear.year.toString() : '');
-                setClassLevel('');
-                setName('');
-                setRoom('');
-                setShift('Manhã');
-                setTeacherAssignments({});
-                setSelectedStudentIds(new Set());
-            }
-            setError('');
-            setExpandedTeacherId(null);
-        }
-    }, [isOpen, existingTurma, academicYears]);
+    // Removed useEffect that was causing setState in effect linter error
+    // Resets are now handled by the 'key' prop in the parent component
 
     const availableTeachers = useMemo(() => {
         return users.filter(u => 

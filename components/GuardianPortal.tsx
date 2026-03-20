@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Student, AcademicYear, SchoolSettings, Turma, FinancialSettings, AppNotification, UserRole, Grade, AttendanceRecord, Subject, PaymentRecord, BehaviorNote } from '../types';
-import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, ClockIcon, ChartBarIcon, BookOpenIcon, PrinterIcon, FilterIcon, DevicePhoneMobileIcon } from './icons/IconComponents';
+import { LogoutIcon, GraduationCapIcon, ChevronDownIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, CloseIcon, CalendarIcon, StarIcon, UsersIcon, CurrencyDollarIcon, ClockIcon, ChartBarIcon, BookOpenIcon, PrinterIcon, FilterIcon, DevicePhoneMobileIcon, CameraIcon } from './icons/IconComponents';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { View } from './Dashboard';
@@ -212,7 +212,9 @@ const StudentInfoCard: React.FC<{
     onOpenPayment: (s: Student) => void;
     users: User[];
     currentUser: User;
-}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement, onOpenPayment, users, currentUser }) => {
+    students: Student[];
+    onStudentsChange: (students: Student[]) => void;
+}> = ({ student, selectedYear, academicYears, schoolSettings, turmas, financialSettings, onOpenStatement, onOpenPayment, users, currentUser, students, onStudentsChange }) => {
     const [activeTab, setActiveTab] = useState<'grades' | 'attendance' | 'financial' | 'behavior' | 'discipline' | 'schedule'>('grades');
     
     // Estados para filtros de assiduidade
@@ -331,11 +333,50 @@ const StudentInfoCard: React.FC<{
         return val.toLocaleString('pt-MZ', { style: 'currency', currency: financialSettings.currency || 'MZN' });
     };
 
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = reader.result as string;
+                // Update student in the parent list
+                const updatedStudents = students.map(s => 
+                    s.id === student.id ? { ...s, profilePictureUrl: base64String } : s
+                );
+                onStudentsChange(updatedStudents);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     return (
         <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden mb-10 transition-all hover:shadow-indigo-100">
             <div className="p-8 bg-slate-900 text-white relative">
                 <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
-                    <img className="h-24 w-24 rounded-3xl object-cover border-4 border-indigo-500 shadow-xl" src={student.profilePictureUrl || 'https://i.pravatar.cc/150'} alt="" />
+                    <div className="relative group">
+                        <img 
+                            className="h-24 w-24 rounded-3xl object-cover border-4 border-indigo-500 shadow-xl cursor-pointer hover:opacity-80 transition-opacity" 
+                            src={student.profilePictureUrl || 'https://i.pravatar.cc/150'} 
+                            alt="" 
+                            onClick={() => fileInputRef.current?.click()}
+                        />
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="absolute -bottom-2 -right-2 bg-indigo-600 p-2 rounded-xl shadow-lg hover:bg-indigo-700 transition-all border-2 border-slate-900"
+                            title="Alterar Foto"
+                        >
+                            <CameraIcon className="w-4 h-4 text-white" />
+                        </button>
+                        <input 
+                            type="file" 
+                            ref={fileInputRef} 
+                            onChange={handlePhotoUpload} 
+                            accept="image/*" 
+                            className="hidden" 
+                        />
+                    </div>
                     <div className="flex-1 text-center md:text-left">
                         <h3 className="text-3xl font-black uppercase tracking-tight">{student.name}</h3>
                         <p className="text-indigo-400 text-xs font-black uppercase tracking-widest mt-2">
@@ -857,6 +898,8 @@ const GuardianPortal: React.FC<GuardianPortalProps> = ({ user, onLogout, onUpdat
                                     onOpenPayment={(s) => { setPaymentStudent(s); setIsPaymentOpen(true); }}
                                     users={users || []}
                                     currentUser={user}
+                                    students={students}
+                                    onStudentsChange={onStudentsChange || (() => {})}
                                 />
                             ))
                         ) : (

@@ -169,7 +169,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
     
     // USANDO DATA LOCAL DE MOÇAMBIQUE
     const [attendanceDate, setAttendanceDate] = useState<string>(getLocalDateString());
-    const [attendanceChanges, setAttendanceChanges] = useState<Record<string, 'Presente' | 'Ausente' | 'Atrasado'>>({});
+    const [attendanceChanges, setAttendanceChanges] = useState<Record<string, 'Presente' | 'Ausente' | 'Atrasado' | 'Justificada'>>({});
     const [selectedAttendanceMonth, setSelectedAttendanceMonth] = useState<number>(new Date().getMonth() + 1);
 
     const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
@@ -365,7 +365,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
         return gradeObj ? ((gradeObj as any)[field] as number | undefined) ?? 0 : 0;
     };
 
-    const getAttendanceStatus = (student: Student): 'Presente' | 'Ausente' | 'Atrasado' | '' => {
+    const getAttendanceStatus = (student: Student): 'Presente' | 'Ausente' | 'Atrasado' | 'Justificada' | '' => {
         if (attendanceChanges[student.id]) return attendanceChanges[student.id];
         const record = student.attendance?.find(a => a.date === attendanceDate);
         return record ? record.status : '';
@@ -375,7 +375,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
         if (!student.attendance) return 0;
         return student.attendance.filter(a => {
             const year = parseInt(a.date.split('-')[0]) || 0;
-            return year === turma.academicYear && (a.status === 'Ausente' || a.status === 'Atrasado');
+            return year === turma.academicYear && (a.status === 'Ausente' || a.status === 'Atrasado') && !a.isWaived;
         }).length;
     };
 
@@ -385,11 +385,60 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
             const parts = a.date.split('-');
             const year = parseInt(parts[0]) || 0;
             const m = parseInt(parts[1]) || 0;
-            return year === turma.academicYear && m === month && (a.status === 'Ausente' || a.status === 'Atrasado');
+            return year === turma.academicYear && m === month && (a.status === 'Ausente' || a.status === 'Atrasado') && !a.isWaived;
         }).length;
     };
 
-    const handleAttendanceChange = (studentId: string, status: 'Presente' | 'Ausente' | 'Atrasado') => {
+    const getIsWaived = (student: Student): boolean => {
+        const record = student.attendance?.find(a => a.date === attendanceDate);
+        return record ? record.isWaived || false : false;
+    };
+
+    const getAdminNote = (student: Student): string => {
+        const record = student.attendance?.find(a => a.date === attendanceDate);
+        return record ? record.adminNote || '' : '';
+    };
+
+    const handleAdminAttendanceUpdate = (studentId: string, field: 'isWaived' | 'adminNote', value: any) => {
+        const updatedStudents = [...allStudents];
+        const studentIndex = updatedStudents.findIndex(s => s.id === studentId);
+        if (studentIndex !== -1) {
+            const s = { ...updatedStudents[studentIndex] };
+            const attendance = s.attendance ? [...s.attendance] : [];
+            const recordIndex = attendance.findIndex(a => a.date === attendanceDate);
+            if (recordIndex !== -1) {
+                attendance[recordIndex] = { ...attendance[recordIndex], [field]: value };
+                s.attendance = attendance;
+                
+                // Re-calculate total absences if isWaived changed
+                if (field === 'isWaived') {
+                    const totalAbsences = s.attendance.filter(a => {
+                        const year = parseInt(a.date.split('-')[0]) || 0;
+                        return year === turma.academicYear && (a.status === 'Ausente' || a.status === 'Atrasado') && !a.isWaived;
+                    }).length;
+                    
+                    // If absences drop below 30, we can potentially un-fail them
+                    if (totalAbsences < 30 && s.failedByAbsences) {
+                        s.failedByAbsences = false;
+                    }
+                }
+
+                updatedStudents[studentIndex] = s;
+                onUpdateStudents(updatedStudents);
+            }
+        }
+    };
+
+    const handleAdminStudentUpdate = (studentId: string, field: 'failedByAbsences', value: boolean) => {
+        const updatedStudents = [...allStudents];
+        const studentIndex = updatedStudents.findIndex(s => s.id === studentId);
+        if (studentIndex !== -1) {
+            updatedStudents[studentIndex] = { ...updatedStudents[studentIndex], [field]: value };
+            onUpdateStudents(updatedStudents);
+        }
+    };
+
+    const handleAttendanceChange = (studentId: string, status: 'Presente' | 'Ausente' | 'Atrasado' | 'Justificada') => {
         if (!canEditAttendance) return;
         setAttendanceChanges(prev => ({ ...prev, [studentId]: status }));
         setSaveStatus('idle');
@@ -397,7 +446,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
 
     const handleMarkAllPresent = () => {
         if (!canEditAttendance) return;
-        const changes: Record<string, 'Presente' | 'Ausente' | 'Atrasado'> = {};
+        const changes: Record<string, 'Presente' | 'Ausente' | 'Atrasado' | 'Justificada'> = {};
         studentsInTurma.forEach(student => {
             changes[student.id] = 'Presente';
         });
@@ -420,12 +469,55 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                 const s = { ...updatedStudents[studentIndex] };
                 const attendance = s.attendance ? [...s.attendance] : [];
                 const recordIndex = attendance.findIndex(a => a.date === attendanceDate);
+                
+                // Check if status is actually changing to avoid redundant notifications
+                const oldStatus = recordIndex !== -1 ? attendance[recordIndex].status : '';
+                if (oldStatus === newStatus) return;
+
                 const newRecord: AttendanceRecord = { date: attendanceDate, status: newStatus };
                 if (recordIndex !== -1) attendance[recordIndex] = newRecord;
                 else attendance.push(newRecord);
                 s.attendance = attendance;
+                
+                // Calculate total absences after this change
+                const totalAbsences = s.attendance.filter(a => {
+                    const year = parseInt(a.date.split('-')[0]) || 0;
+                    return year === turma.academicYear && (a.status === 'Ausente' || a.status === 'Atrasado') && !a.isWaived;
+                }).length;
+
+                // Auto-fail by absences if >= 30
+                const wasAlreadyFailed = s.failedByAbsences;
+                if (totalAbsences >= 30 && !wasAlreadyFailed) {
+                    s.failedByAbsences = true;
+                    
+                    // Notify everyone about the failure (only once)
+                    if (users && onAddNotifications) {
+                        const recipients = users.filter(u => 
+                            (u.name === s.guardianName && u.role === UserRole.ENCARREGADO) ||
+                            (u.role === UserRole.ADMIN) ||
+                            (u.role === UserRole.SECRETARIA) ||
+                            (u.role === UserRole.SUPER_ADMIN) ||
+                            (u.id === currentUser.id) // The teacher
+                        );
+
+                        recipients.forEach(u => {
+                            notifications.push({
+                                id: `fail_notif_${Date.now()}_${s.id}_${u.id}`,
+                                userId: u.id,
+                                type: 'admin_alert',
+                                title: `Reprovação por Faltas: ${s.name}`,
+                                message: `O aluno ${s.name} atingiu ${totalAbsences} faltas e foi automaticamente reprovado por faltas.`,
+                                read: false,
+                                timestamp: new Date().toISOString(),
+                                relatedId: s.id
+                            });
+                        });
+                    }
+                }
+
                 updatedStudents[studentIndex] = s;
 
+                // Daily notification for absence/late
                 if ((newStatus === 'Ausente' || newStatus === 'Atrasado') && users && onAddNotifications) {
                     const guardian = users.find(u => u.name === student.guardianName && u.role === UserRole.ENCARREGADO);
                     if (guardian) {
@@ -434,7 +526,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                             userId: guardian.id,
                             type: 'message',
                             title: `Alerta de Assiduidade: ${student.name}`,
-                            message: `Status "${newStatus}" registado para o seu educando no dia ${dateFormatted}.`,
+                            message: `Status "${newStatus}" registado para o seu educando no dia ${dateFormatted}. Total de faltas: ${totalAbsences}.`,
                             read: false,
                             timestamp: new Date().toISOString(),
                             relatedId: student.id
@@ -833,7 +925,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                             if (hasExam && selectedSubject) {
                                                 const examGrade = getExamGrade(student, selectedSubject.name);
                                                 const finalWithExam = calculateExamFinalGrade(mediaInterna, examGrade);
-                                                const isApproved = finalWithExam >= 9.5;
+                                                const isApproved = finalWithExam >= 9.5 && !student.failedByAbsences;
                                                 return (
                                                     <tr key={student.id} className="hover:bg-gray-50">
                                                         <td className="px-6 py-4 whitespace-nowrap flex items-center">
@@ -856,13 +948,13 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                         <td className={`px-6 py-4 text-center text-sm font-bold bg-indigo-50 ${isApproved ? 'text-green-700' : 'text-red-600'}`}>{finalWithExam.toFixed(1)}</td>
                                                         <td className="px-6 py-4 text-center text-sm">
                                                             <span className={`px-2 py-1 rounded-full text-xs font-semibold ${isApproved ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                                {isApproved ? 'Aprovado' : 'Reprovado'}
+                                                                {student.failedByAbsences ? 'Reprovado por Faltas' : (isApproved ? 'Aprovado' : 'Reprovado')}
                                                             </span>
                                                         </td>
                                                     </tr>
                                                 );
                                             } else {
-                                                const isApproved = mediaInterna >= 9.5;
+                                                const isApproved = mediaInterna >= 9.5 && !student.failedByAbsences;
                                                 return (
                                                     <tr key={student.id} className="hover:bg-gray-50">
                                                         <td className="px-6 py-4 whitespace-nowrap flex items-center">
@@ -875,7 +967,7 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                                         <td className={`px-6 py-4 text-center text-sm font-bold bg-indigo-50 ${isApproved ? 'text-green-700' : 'text-red-600'}`}>{mediaInterna.toFixed(1)}</td>
                                                         <td className="px-6 py-4 text-center text-sm">
                                                             <span className={`px-2 py-1 rounded-full text-xs font-semibold ${isApproved ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                                {isApproved ? 'Aprovado' : 'Reprovado'}
+                                                                {student.failedByAbsences ? 'Reprovado por Faltas' : (isApproved ? 'Aprovado' : 'Reprovado')}
                                                             </span>
                                                         </td>
                                                     </tr>
@@ -983,49 +1075,97 @@ const TurmaDetails: React.FC<TurmaDetailsProps> = ({ turma, onBack, allStudents,
                                         const totalAbsences = getTotalAbsences(student);
                                         const monthlyAbsences = getMonthlyAbsences(student, selectedAttendanceMonth);
                                         return (
-                                            <tr key={student.id} className="hover:bg-gray-50">
-                                                 <td className="px-6 py-4 whitespace-nowrap flex items-center">
-                                                    <img className="h-8 w-8 rounded-full object-cover mr-3" src={student.profilePictureUrl} alt="" />
-                                                    <div>
-                                                        <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                                                        <div className="text-[10px] text-gray-500">{student.id}</div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${monthlyAbsences > 2 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
-                                                        {monthlyAbsences}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${totalAbsences > 5 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
-                                                        {totalAbsences}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <div className="flex items-center justify-center space-x-4">
-                                                        {(['Presente', 'Ausente', 'Atrasado'] as const).map(opt => (
-                                                            <label key={opt} className={`flex items-center space-x-1 cursor-pointer p-2 rounded-md transition-colors ${status === opt ? 'bg-gray-100 ring-1 ring-gray-300' : ''}`}>
-                                                                <input 
-                                                                    type="radio" 
-                                                                    name={`attendance-${student.id}`}
-                                                                    value={opt}
-                                                                    checked={status === opt}
-                                                                    onChange={() => handleAttendanceChange(student.id, opt)}
-                                                                    disabled={!canEditAttendance}
-                                                                    className={`h-4 w-4 ${
-                                                                        opt === 'Presente' ? 'text-green-600' : 
-                                                                        opt === 'Ausente' ? 'text-red-600' : 'text-yellow-500'
-                                                                    } focus:ring-indigo-500`}
-                                                                />
-                                                                <span className={`text-sm font-medium ${
-                                                                    opt === 'Presente' ? 'text-green-700' : 
-                                                                    opt === 'Ausente' ? 'text-red-700' : 'text-yellow-700'
-                                                                }`}>{opt}</span>
-                                                            </label>
-                                                        ))}
-                                                    </div>
-                                                </td>
-                                            </tr>
+                                            <React.Fragment key={student.id}>
+                                                <tr className="hover:bg-gray-50">
+                                                     <td className="px-6 py-4 whitespace-nowrap flex items-center">
+                                                        <img className="h-8 w-8 rounded-full object-cover mr-3" src={student.profilePictureUrl} alt="" />
+                                                        <div>
+                                                            <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                                                                {student.name}
+                                                                {student.failedByAbsences && (
+                                                                    <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[8px] font-bold rounded uppercase">PPF</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-[10px] text-gray-500">{student.id}</div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${monthlyAbsences > 2 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
+                                                            {monthlyAbsences}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${totalAbsences > 5 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                                                            {totalAbsences}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <div className="flex items-center justify-center space-x-4">
+                                                            {(['Presente', 'Ausente', 'Atrasado'] as const).map(opt => (
+                                                                <label key={opt} className={`flex items-center space-x-1 cursor-pointer p-2 rounded-md transition-colors ${status === opt ? 'bg-gray-100 ring-1 ring-gray-300' : ''}`}>
+                                                                    <input 
+                                                                        type="radio" 
+                                                                        name={`attendance-${student.id}`}
+                                                                        value={opt}
+                                                                        checked={status === opt}
+                                                                        onChange={() => handleAttendanceChange(student.id, opt)}
+                                                                        disabled={!canEditAttendance}
+                                                                        className={`h-4 w-4 ${
+                                                                            opt === 'Presente' ? 'text-green-600' : 
+                                                                            opt === 'Ausente' ? 'text-red-600' : 'text-yellow-500'
+                                                                        } focus:ring-indigo-500`}
+                                                                    />
+                                                                    <span className={`text-sm font-medium ${
+                                                                        opt === 'Presente' ? 'text-green-700' : 
+                                                                        opt === 'Ausente' ? 'text-red-700' : 'text-yellow-700'
+                                                                    }`}>{opt}</span>
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.SECRETARIA) && (
+                                                    <tr className="bg-indigo-50/30">
+                                                        <td colSpan={4} className="px-6 py-2">
+                                                            <div className="flex flex-wrap items-center gap-6 text-[11px]">
+                                                                <div className="flex items-center gap-4">
+                                                                    <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                        <input 
+                                                                            type="checkbox" 
+                                                                            checked={student.failedByAbsences || false}
+                                                                            onChange={(e) => handleAdminStudentUpdate(student.id, 'failedByAbsences', e.target.checked)}
+                                                                            className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500"
+                                                                        />
+                                                                        <span className="font-semibold text-red-700 uppercase tracking-tight">Reprovado por Faltas (PPF)</span>
+                                                                    </label>
+                                                                    
+                                                                    {(status === 'Ausente' || status === 'Atrasado') && (
+                                                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                            <input 
+                                                                                type="checkbox" 
+                                                                                checked={getIsWaived(student)}
+                                                                                onChange={(e) => handleAdminAttendanceUpdate(student.id, 'isWaived', e.target.checked)}
+                                                                                className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500"
+                                                                            />
+                                                                            <span className="font-semibold text-emerald-700 uppercase tracking-tight">Anular/Perdoar Falta</span>
+                                                                        </label>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex-1 flex items-center gap-2">
+                                                                    <span className="text-gray-500 font-bold uppercase whitespace-nowrap">Nota Admin:</span>
+                                                                    <input 
+                                                                        type="text"
+                                                                        placeholder="Justificativa..."
+                                                                        value={getAdminNote(student)}
+                                                                        onChange={(e) => handleAdminAttendanceUpdate(student.id, 'adminNote', e.target.value)}
+                                                                        className="flex-1 bg-white border border-indigo-100 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-indigo-400"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
                                         )
                                     }) : (
                                         <tr><td colSpan={3} className="text-center py-10 text-gray-500">Nenhum aluno.</td></tr>

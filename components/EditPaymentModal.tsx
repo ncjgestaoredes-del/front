@@ -13,37 +13,23 @@ interface EditPaymentModalProps {
 const paymentMethods: PaymentMethod[] = ['Numerário', 'Transferência Bancária', 'MPesa', 'e-Mola', 'mKesh', 'POS'];
 
 const EditPaymentModal: React.FC<EditPaymentModalProps> = ({ isOpen, onClose, payment, onUpdatePayment }) => {
-    const [formData, setFormData] = useState<{
-        date: string;
-        type: PaymentType;
-        method: PaymentMethod;
-        description: string;
-    }>({
-        date: '',
-        type: 'Mensalidade',
-        method: 'Numerário',
-        description: ''
-    });
+    const [formData, setFormData] = useState(() => ({
+        date: payment?.date || '',
+        type: payment?.type || 'Mensalidade',
+        method: payment?.method || 'Numerário',
+        description: payment?.description || ''
+    }));
 
-    const [items, setItems] = useState<PaymentItem[]>([]);
-
-    useEffect(() => {
+    const [items, setItems] = useState<PaymentItem[]>(() => {
         if (payment) {
-            setFormData({
-                date: payment.date,
-                type: payment.type,
-                method: payment.method || 'Numerário',
-                description: payment.description || ''
-            });
-            
-            // Load existing items or create a default one based on total if no items exist
             if (payment.items && payment.items.length > 0) {
-                setItems(payment.items);
+                return payment.items;
             } else {
-                setItems([{ item: payment.description || 'Pagamento', value: payment.amount }]);
+                return [{ item: payment.description || 'Pagamento', value: payment.amount }];
             }
         }
-    }, [payment]);
+        return [];
+    });
 
     // Auto-calculate total based on items
     const totalAmount = useMemo(() => {
@@ -132,8 +118,7 @@ const EditPaymentModal: React.FC<EditPaymentModalProps> = ({ isOpen, onClose, pa
                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Método</label>
                                 <select 
                                     value={formData.method}
-                                    // @ts-ignore
-                                    onChange={e => setFormData({...formData, method: e.target.value})}
+                                    onChange={e => setFormData({...formData, method: e.target.value as any})}
                                     className="w-full p-2 border rounded-lg bg-white text-sm"
                                 >
                                     {paymentMethods.map(m => (
@@ -145,8 +130,7 @@ const EditPaymentModal: React.FC<EditPaymentModalProps> = ({ isOpen, onClose, pa
                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Categoria</label>
                                 <select 
                                     value={formData.type}
-                                    // @ts-ignore
-                                    onChange={e => setFormData({...formData, type: e.target.value})}
+                                    onChange={e => setFormData({...formData, type: e.target.value as any})}
                                     className="w-full p-2 border rounded-lg bg-white text-sm"
                                 >
                                     <option value="Matrícula">Matrícula</option>

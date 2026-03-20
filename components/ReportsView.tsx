@@ -1,8 +1,8 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Student, AcademicYear, Turma, SchoolSettings, User, FinancialSettings, UserRole, ExpenseRecord } from '../types';
 import { ChartBarIcon, CurrencyDollarIcon, UsersIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, BookOpenIcon, UserAddIcon, ClockIcon, TrendingDownIcon, GraduationCapIcon, PrinterIcon } from './icons/IconComponents';
-import { printStatisticalReport } from './ReceiptUtils';
+import { printStatisticalReport, printDebtorsList } from './ReceiptUtils';
 
 interface ReportsViewProps {
     currentUser: User;
@@ -94,7 +94,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
         if (currentUser.role === UserRole.PROFESSOR) {
             return turmas.filter(t =>
                 t.teachers?.some(teach => teach.teacherId === currentUser.id) ||
-                // @ts-ignore legacy check
+                // @ts-expect-error legacy check
                 t.teacherIds?.includes(currentUser.id) || t.teacherId === currentUser.id
             );
         }
@@ -186,7 +186,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
         let totalSum = 0; let gradeCount = 0;
         const subjectPerformance: Record<string, { total: number, count: number }> = {};
         const distribution = { 'Excelente (≥14)': 0, 'Bom (12-13)': 0, 'Suficiente (10-11)': 0, 'Insuficiente (<10)': 0 };
-        let approved = 0, failed = 0;
+        let approved = 0, failed = 0, failedAbsence = 0;
         visibleStudents.forEach(s => {
             if(s.status !== 'Ativo') return;
             const yearGrades = s.grades?.filter(g => g.academicYear === selectedYear) || [];
@@ -194,7 +194,16 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
             const studentSum = yearGrades.reduce((acc, g) => acc + (Number(g.grade) || 0), 0);
             const studentAvg = studentSum / yearGrades.length;
             if (studentAvg >= 14) distribution['Excelente (≥14)']++; else if (studentAvg >= 12) distribution['Bom (12-13)']++; else if (studentAvg >= 10) distribution['Suficiente (10-11)']++; else distribution['Insuficiente (<10)']++;
-            if (studentAvg >= 10) approved++; else failed++;
+            
+            if (s.failedByAbsences) {
+                failedAbsence++;
+                failed++;
+            } else if (studentAvg >= 10) {
+                approved++;
+            } else {
+                failed++;
+            }
+            
             totalSum += studentSum; gradeCount += yearGrades.length;
             yearGrades.forEach(g => {
                 if (!subjectPerformance[g.subject]) subjectPerformance[g.subject] = { total: 0, count: 0 };
@@ -205,7 +214,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
         const subjectAvgs = Object.entries(subjectPerformance).map(([sub, data]) => ({
             name: sub, avg: data.count > 0 ? data.total / data.count : 0
         })).sort((a, b) => b.avg - a.avg);
-        return { globalAvg, distribution, approved, failed, topSubjects: subjectAvgs.slice(0, 3), bottomSubjects: subjectAvgs.slice(-3).reverse() };
+        return { globalAvg, distribution, approved, failed, failedAbsence, topSubjects: subjectAvgs.slice(0, 3), bottomSubjects: subjectAvgs.slice(-3).reverse() };
     }, [visibleStudents, selectedYear]);
 
     // --- MODULE 4: ATTENDANCE (EXTRAÇÃO ROBUSTA COM REGEX) ---
@@ -270,7 +279,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
         const details = teacherUsers.map(teacher => {
             const myTurmas = yearTurmas.filter(t => 
                 t.teachers?.some(assign => assign.teacherId === teacher.id) ||
-                // @ts-ignore
+                // @ts-expect-error - legacy property check
                 t.teacherIds?.includes(teacher.id) || t.teacherId === teacher.id
             );
 
@@ -279,7 +288,6 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
             const subjectsSet = new Set<string>();
 
             myTurmas.forEach(t => {
-                // @ts-ignore
                 shifts[t.shift]++;
                 if (t.room) rooms.add(t.room);
                 
@@ -356,7 +364,10 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                 }
             });
         });
-        let currentDebt = 0; const currentMonth = new Date().getMonth() + 1;
+
+        let currentDebt = 0; 
+        const debtors: { student: Student, debt: number }[] = [];
+        const currentMonth = new Date().getMonth() + 1;
         const acYear = academicYears.find(y => y.year === selectedYear);
         const startMonth = acYear ? (acYear.startMonth || 2) : 2; const endMonth = acYear ? (acYear.endMonth || 11) : 11;
         visibleStudents.forEach(s => {
@@ -369,19 +380,25 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                 if (profile.status === 'Isento Total') monthlyFee = 0;
                 else if (profile.status === 'Desconto Parcial' && profile.affectedTypes?.includes('Mensalidade')) monthlyFee *= (1 - (profile.discountPercentage || 0) / 100);
                 const checkLimit = (selectedYear === new Date().getFullYear()) ? currentMonth : endMonth;
+                let studentDebt = 0;
                 for(let m = startMonth; m <= checkLimit; m++) {
                      if (extractYear(s.matriculationDate) === selectedYear && m < (new Date(s.matriculationDate).getMonth() + 1)) continue;
-                     if (!s.payments?.some(p => p.academicYear === selectedYear && p.type === 'Mensalidade' && p.referenceMonth === m)) currentDebt += monthlyFee;
+                     if (!s.payments?.some(p => p.academicYear === selectedYear && p.type === 'Mensalidade' && p.referenceMonth === m)) studentDebt += monthlyFee;
+                }
+                if (studentDebt > 0) {
+                    currentDebt += studentDebt;
+                    debtors.push({ student: s, debt: studentDebt });
                 }
             }
         });
         const totalExpenses = expenses.filter(e => {
             return extractYear(e.date) === selectedYear;
         }).reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+
         return {
             revenue: { total: totalRevenue, byCategory: revenueByCategory },
             expenses: { total: totalExpenses },
-            tuition: { arrears: currentDebt },
+            tuition: { arrears: currentDebt, debtors },
             health: { profit: totalRevenue - totalExpenses }
         };
     }, [visibleStudents, expenses, selectedYear, financialSettings, academicYears]);
@@ -438,7 +455,8 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                     <div class="stat-grid">
                         <div class="stat-card"><div class="stat-value">${pedagogicalStats.globalAvg}</div><div class="stat-label">Média Global</div></div>
                         <div class="stat-card"><div class="stat-value">${pedagogicalStats.approved}</div><div class="stat-label">Aprovados</div></div>
-                        <div class="stat-card"><div class="stat-value">${pedagogicalStats.failed}</div><div class="stat-label">Reprovados</div></div>
+                        <div class="stat-card"><div class="stat-value">${pedagogicalStats.failed - pedagogicalStats.failedAbsence}</div><div class="stat-label">Reprovados (Notas)</div></div>
+                        <div class="stat-card"><div class="stat-value">${pedagogicalStats.failedAbsence}</div><div class="stat-label">Reprovados (Faltas)</div></div>
                     </div>
                     <h4>Distribuição de Níveis</h4>
                     ${getSummaryTable(pedagogicalStats.distribution)}
@@ -547,10 +565,11 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
             case 'academic':
                 return (
                     <div className="space-y-6 animate-fade-in">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <StatCard title="Média Geral" value={pedagogicalStats.globalAvg} color="text-purple-600" icon={<AcademicCapIcon className="w-5 h-5 text-purple-600"/>} />
                             <StatCard title="Aprovados" value={pedagogicalStats.approved} color="text-green-600" icon={<CheckCircleIcon className="w-5 h-5 text-green-600"/>} />
-                            <StatCard title="Reprovados (Prev.)" value={pedagogicalStats.failed} color="text-red-600" icon={<ExclamationTriangleIcon className="w-5 h-5 text-red-600"/>} />
+                            <StatCard title="Reprovados (Notas)" value={pedagogicalStats.failed - pedagogicalStats.failedAbsence} color="text-red-600" icon={<ExclamationTriangleIcon className="w-5 h-5 text-red-600"/>} />
+                            <StatCard title="Reprovados (Faltas)" value={pedagogicalStats.failedAbsence} color="text-orange-600" icon={<ClockIcon className="w-5 h-5 text-orange-600"/>} />
                         </div>
                         <div className="bg-white p-6 rounded-xl shadow-sm border">
                             <SectionTitle title="Distribuição de Resultados" />
@@ -665,6 +684,15 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                             <StatCard title="Receita Total" value={formatCurrency(financialStats.revenue.total)} color="text-green-600" icon={<CurrencyDollarIcon className="w-5 h-5 text-green-600"/>} />
                             <StatCard title="Dívida Estimada" value={formatCurrency(financialStats.tuition.arrears)} color="text-red-600" />
                             <StatCard title="Lucro/Prejuízo" value={formatCurrency(financialStats.health.profit)} color={financialStats.health.profit >= 0 ? "text-blue-600" : "text-red-600"} />
+                            <div className="flex items-center justify-center">
+                                <button 
+                                    onClick={() => printDebtorsList(financialStats.tuition.debtors, selectedYear, schoolSettings, financialSettings.currency)}
+                                    className="bg-red-600 text-white font-bold py-3 px-6 rounded-xl hover:bg-red-700 transition-colors flex items-center shadow-lg w-full justify-center"
+                                >
+                                    <PrinterIcon className="w-5 h-5 mr-2" />
+                                    Lista de Devedores
+                                </button>
+                            </div>
                         </div>
                     </div>
                 );

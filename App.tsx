@@ -213,6 +213,7 @@ const App: React.FC = () => {
             notifications={notifications}
             onAddNotifications={(n: AppNotification[]) => { const upd = [...n, ...notifications]; setNotifications(upd); saveSchoolData('notifications', upd); }}
             onMarkNotificationAsRead={(id: string) => { const upd = notifications.map(n => n.id === id ? { ...n, read: true } : n); setNotifications(upd); saveSchoolData('notifications', upd); }}
+            onDeleteNotifications={(ids: string[]) => { const upd = notifications.filter(n => !ids.includes(n.id)); setNotifications(upd); saveSchoolData('notifications', upd); }}
             requests={requests}
             onRequestsChange={(r: SchoolRequest[]) => { setRequests(r); saveSchoolData('requests', r); }}
         />

@@ -674,7 +674,13 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
                             )}
                         </div>
                     </div>
-                    <EditPaymentModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} payment={editingPayment} onUpdatePayment={handleUpdatePayment} />
+                    <EditPaymentModal 
+                        key={editingPayment ? `edit-pay-${editingPayment.id}` : 'edit-pay-none'}
+                        isOpen={isEditModalOpen} 
+                        onClose={() => setIsEditModalOpen(false)} 
+                        payment={editingPayment} 
+                        onUpdatePayment={handleUpdatePayment} 
+                    />
                 </div>
             )}
         </div>

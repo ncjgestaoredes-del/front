@@ -24,21 +24,18 @@ const statusOptions: StudentStatus[] = ['Ativo', 'Inativo', 'Transferido'];
 const paymentTypesForDiscount: PaymentType[] = ['Matrícula', 'Renovação', 'Mensalidade', 'Uniforme', 'Material', 'Taxa de Exames'];
 
 const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, student, onUpdateStudent }) => {
-  const [formData, setFormData] = useState<Student | null>(student);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
+  const [formData, setFormData] = useState<Student | null>(() => {
     if (student) {
         // Ensure financialProfile exists for older records
-        const enhancedStudent = {
+        return {
             ...student,
             financialProfile: student.financialProfile || { status: 'Normal', discountPercentage: 0, affectedTypes: [], justification: '' }
         };
-        setFormData(enhancedStudent);
-        setPreview(student.profilePictureUrl || null);
     }
-  }, [student]);
+    return null;
+  });
+  const [preview, setPreview] = useState<string | null>(() => student?.profilePictureUrl || null);
+  const [error, setError] = useState('');
 
   const handleChange = useCallback((e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;

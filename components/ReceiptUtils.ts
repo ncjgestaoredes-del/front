@@ -707,6 +707,16 @@ const getDetailedGrades = (student: Student, subject: Subject, period: string, y
     return { acs1, acs2, mac, at, mf };
 };
 
+const getAnnualSummary = (student: Student, subject: Subject, year: number) => {
+    const grades = student.grades?.filter(g => g.subject === subject.name && g.academicYear === year) || [];
+    const g1 = grades.find(g => g.period === '1º Trimestre')?.grade || 0;
+    const g2 = grades.find(g => g.period === '2º Trimestre')?.grade || 0;
+    const g3 = grades.find(g => g.period === '3º Trimestre')?.grade || 0;
+    const mediaInterna = parseFloat(((g1 + g2 + g3) / 3).toFixed(1));
+    const exam = student.examGrades?.find((e: ExamResult) => e.subject === subject.name && e.academicYear === year)?.grade || 0;
+    return { g1, g2, g3, mediaInterna, exam };
+};
+
 export const printClassPauta = (
     turma: Turma,
     students: Student[],
@@ -726,57 +736,104 @@ export const printClassPauta = (
     let rowsHtml = '';
 
     if (type === 'general') {
-        // General: Student | Sub1 | Sub2 ... | Final Avg
+        // General: Student | Sub1 | Sub2 ... | Final Avg | Result
         headersHtml = `
             <th style="text-align:left; width: 25%;">Aluno</th>
             ${subjects.map(s => `<th style="text-align:center;">${s.name.substring(0, 3)}</th>`).join('')}
             <th style="text-align:center; background-color:#eee;">Média</th>
+            <th style="text-align:center;">Resultado</th>
         `;
 
         rowsHtml = students.map(s => {
             let sum = 0;
             let count = 0;
             const cols = subjects.map(sub => {
-                const { mf } = getDetailedGrades(s, sub, period as string, turma.academicYear, settings);
+                let mf = 0;
+                if (period === 'Situação Anual') {
+                    const { mediaInterna, exam } = getAnnualSummary(s, sub, turma.academicYear);
+                    mf = hasExam ? parseFloat(((mediaInterna * 0.4) + (exam * 0.6)).toFixed(1)) : mediaInterna;
+                } else {
+                    const grades = getDetailedGrades(s, sub, period as string, turma.academicYear, settings);
+                    mf = grades.mf;
+                }
+                
                 if (mf > 0) { sum += mf; count++; }
                 return `<td style="text-align:center; ${mf < 10 && mf > 0 ? 'color:red;' : ''}">${mf > 0 ? mf.toFixed(1) : '-'}</td>`;
             }).join('');
             
             const avg = count > 0 ? (sum / count).toFixed(1) : '-';
             const avgVal = parseFloat(avg);
+            const isApproved = avgVal >= 9.5 && !s.failedByAbsences;
             
             return `
                 <tr>
                     <td style="padding: 5px;">${s.name}</td>
                     ${cols}
                     <td style="text-align:center; font-weight:bold; background-color:#f9f9f9; ${avgVal < 10 && avg !== '-' ? 'color:red;' : ''}">${avg}</td>
+                    <td style="text-align:center; font-size: 8px;">
+                        ${s.failedByAbsences ? '<span style="color:red; font-weight:bold;">RPF</span>' : (avgVal >= 9.5 ? '<span style="color:green;">AP</span>' : '<span style="color:red;">RP</span>')}
+                    </td>
                 </tr>
             `;
         }).join('');
     } else if (type === 'detailed' && subject) {
         // Detailed for ONE subject: Student | ACS1 | ACS2 | MAC | AT | MF
-        headersHtml = `
-            <th style="text-align:left;">Aluno</th>
-            <th style="text-align:center;">ACS 1</th>
-            <th style="text-align:center;">ACS 2</th>
-            <th style="text-align:center;">MAC</th>
-            <th style="text-align:center;">AT</th>
-            <th style="text-align:center; background-color:#eee;">MF</th>
-        `;
-
-        rowsHtml = students.map(s => {
-            const { acs1, acs2, mac, at, mf } = getDetailedGrades(s, subject, period as string, turma.academicYear, settings);
-            return `
-                <tr>
-                    <td style="padding: 5px;">${s.name}</td>
-                    <td style="text-align:center;">${acs1 || '-'}</td>
-                    <td style="text-align:center;">${acs2 || '-'}</td>
-                    <td style="text-align:center;">${mac || '-'}</td>
-                    <td style="text-align:center;">${at || '-'}</td>
-                    <td style="text-align:center; font-weight:bold; background-color:#f9f9f9; ${mf < 10 && mf > 0 ? 'color:red;' : ''}">${mf || '-'}</td>
-                </tr>
+        if (period === 'Situação Anual') {
+            headersHtml = `
+                <th style="text-align:left;">Aluno</th>
+                <th style="text-align:center;">1º Trim</th>
+                <th style="text-align:center;">2º Trim</th>
+                <th style="text-align:center;">3º Trim</th>
+                <th style="text-align:center;">Média Interna</th>
+                ${hasExam ? '<th style="text-align:center;">Exame</th>' : ''}
+                <th style="text-align:center; background-color:#eee;">Nota Final</th>
+                <th style="text-align:center;">Resultado</th>
             `;
-        }).join('');
+            
+            rowsHtml = students.map(s => {
+                const { g1, g2, g3, mediaInterna, exam } = getAnnualSummary(s, subject, turma.academicYear);
+                const final = hasExam ? parseFloat(((mediaInterna * 0.4) + (exam * 0.6)).toFixed(1)) : mediaInterna;
+                const isApproved = final >= 9.5 && !s.failedByAbsences;
+                
+                return `
+                    <tr>
+                        <td style="padding: 5px;">${s.name}</td>
+                        <td style="text-align:center;">${g1 || '-'}</td>
+                        <td style="text-align:center;">${g2 || '-'}</td>
+                        <td style="text-align:center;">${g3 || '-'}</td>
+                        <td style="text-align:center;">${mediaInterna || '-'}</td>
+                        ${hasExam ? `<td style="text-align:center;">${exam || '-'}</td>` : ''}
+                        <td style="text-align:center; font-weight:bold; background-color:#f9f9f9; ${final < 10 && final > 0 ? 'color:red;' : ''}">${final || '-'}</td>
+                        <td style="text-align:center; font-size: 8px;">
+                            ${s.failedByAbsences ? '<span style="color:red; font-weight:bold;">RPF</span>' : (isApproved ? '<span style="color:green;">AP</span>' : '<span style="color:red;">RP</span>')}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            headersHtml = `
+                <th style="text-align:left;">Aluno</th>
+                <th style="text-align:center;">ACS 1</th>
+                <th style="text-align:center;">ACS 2</th>
+                <th style="text-align:center;">MAC</th>
+                <th style="text-align:center;">AT</th>
+                <th style="text-align:center; background-color:#eee;">MF</th>
+            `;
+
+            rowsHtml = students.map(s => {
+                const { acs1, acs2, mac, at, mf } = getDetailedGrades(s, subject, period as string, turma.academicYear, settings);
+                return `
+                    <tr>
+                        <td style="padding: 5px;">${s.name}</td>
+                        <td style="text-align:center;">${acs1 || '-'}</td>
+                        <td style="text-align:center;">${acs2 || '-'}</td>
+                        <td style="text-align:center;">${mac || '-'}</td>
+                        <td style="text-align:center;">${at || '-'}</td>
+                        <td style="text-align:center; font-weight:bold; background-color:#f9f9f9; ${mf < 10 && mf > 0 ? 'color:red;' : ''}">${mf || '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
     } else if (type === 'general_detailed') {
         // Very Wide Table
         headersHtml = `
@@ -784,6 +841,7 @@ export const printClassPauta = (
             ${subjects.map(s => `
                 <th colspan="5" style="text-align:center; border-left: 2px solid #ccc;">${s.name}</th>
             `).join('')}
+            <th style="text-align:center; border-left: 2px solid #ccc;">Resultado</th>
         `;
         
         // Second header row logic needs to be handled via custom HTML structure in print template
@@ -840,23 +898,40 @@ export const printClassPauta = (
                     ` : ''}
                 </thead>
                 <tbody>
-                    ${type === 'general_detailed' ? students.map(s => `
-                        <tr>
-                            <td>${s.name}</td>
-                            ${subjects.map(sub => {
-                                const { acs1, acs2, mac, at, mf } = getDetailedGrades(s, sub, period as string, turma.academicYear, settings);
-                                return `
-                                    <td style="text-align:center;">${acs1||'-'}</td>
-                                    <td style="text-align:center;">${acs2||'-'}</td>
-                                    <td style="text-align:center;">${mac||'-'}</td>
-                                    <td style="text-align:center;">${at||'-'}</td>
-                                    <td style="text-align:center; font-weight:bold; ${mf < 10 && mf > 0 ? 'color:red;' : ''}">${mf||'-'}</td>
-                                `;
-                            }).join('')}
-                        </tr>
-                    `).join('') : rowsHtml}
+                    ${type === 'general_detailed' ? students.map(s => {
+                        let totalSum = 0;
+                        let subjectsCount = 0;
+                        const cols = subjects.map(sub => {
+                            const { acs1, acs2, mac, at, mf } = getDetailedGrades(s, sub, period as string, turma.academicYear, settings);
+                            if (mf > 0) { totalSum += mf; subjectsCount++; }
+                            return `
+                                <td style="text-align:center;">${acs1||'-'}</td>
+                                <td style="text-align:center;">${acs2||'-'}</td>
+                                <td style="text-align:center;">${mac||'-'}</td>
+                                <td style="text-align:center;">${at||'-'}</td>
+                                <td style="text-align:center; font-weight:bold; ${mf < 10 && mf > 0 ? 'color:red;' : ''}">${mf||'-'}</td>
+                            `;
+                        }).join('');
+                        
+                        const avg = subjectsCount > 0 ? totalSum / subjectsCount : 0;
+                        const isApproved = avg >= 9.5 && !s.failedByAbsences;
+                        
+                        return `
+                            <tr>
+                                <td>${s.name}</td>
+                                ${cols}
+                                <td style="text-align:center; font-size: 8px; border-left: 2px solid #ccc;">
+                                    ${s.failedByAbsences ? '<span style="color:red; font-weight:bold;">RPF</span>' : (isApproved ? '<span style="color:green;">AP</span>' : '<span style="color:red;">RP</span>')}
+                                </td>
+                            </tr>
+                        `;
+                    }).join('') : rowsHtml}
                 </tbody>
             </table>
+            
+            <div style="margin-top: 10px; font-size: 8px; color: #666;">
+                <strong>Legenda:</strong> AP: Aprovado | RP: Reprovado | RPF: Reprovado por Faltas
+            </div>
             
             <div style="margin-top: 30px; display: flex; justify-content: space-around;">
                 <div style="text-align:center; border-top: 1px solid #000; width: 200px; padding-top:5px;">O Director de Turma</div>
@@ -1240,6 +1315,404 @@ export const printSchedule = (
             <div style="margin-top: 40px; display: flex; justify-content: space-around; font-size: 10px;">
                 <div style="border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px;">O Director de Turma</div>
                 <div style="border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px;">A Direcção</div>
+            </div>
+
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+    `;
+
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(documentHtml);
+        win.document.close();
+    }
+};
+
+export const printStudentReportCard = (
+    student: Student,
+    academicYear: number,
+    subjects: Subject[],
+    schoolSettings: SchoolSettings
+) => {
+    const logoHtml = schoolSettings.schoolLogo 
+        ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 80px; max-width: 80px;" />` 
+        : '<div style="width: 80px; height: 80px; background: #eee; border-radius: 50%;"></div>';
+
+    const periods = ['1º Trimestre', '2º Trimestre', '3º Trimestre'];
+    
+    const rowsHtml = subjects.map(subject => {
+        const periodGrades = periods.map(period => {
+            const { mf } = getDetailedGrades(student, subject, period, academicYear, schoolSettings);
+            return mf > 0 ? mf.toFixed(1) : '-';
+        });
+
+        // Calculate Annual Average
+        const validGrades = periodGrades.filter(g => g !== '-').map(Number);
+        const annualAvg = validGrades.length > 0 ? (validGrades.reduce((a, b) => a + b, 0) / validGrades.length).toFixed(1) : '-';
+        const annualAvgVal = parseFloat(annualAvg);
+
+        return `
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc; font-weight: bold;">${subject.name}</td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: center; ${parseFloat(periodGrades[0]) < 10 ? 'color: red;' : ''}">${periodGrades[0]}</td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: center; ${parseFloat(periodGrades[1]) < 10 ? 'color: red;' : ''}">${periodGrades[1]}</td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: center; ${parseFloat(periodGrades[2]) < 10 ? 'color: red;' : ''}">${periodGrades[2]}</td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: center; font-weight: bold; background: #f5f5f5; ${annualAvgVal < 10 ? 'color: red;' : ''}">${annualAvg}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const documentHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Boletim Escolar - ${student.name}</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; }
+                .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #444; padding-bottom: 10px; }
+                .school-info { text-align: right; }
+                .school-name { font-size: 18px; font-weight: bold; margin: 0; text-transform: uppercase; }
+                .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 15px 0; text-transform: uppercase; text-decoration: underline; }
+                .student-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; font-size: 12px; background: #f9f9f9; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+                
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                th, td { border: 1px solid #666; padding: 8px; }
+                th { background-color: #f0f0f0; font-weight: bold; font-size: 11px; text-transform: uppercase; }
+                
+                .footer { margin-top: 50px; display: flex; justify-content: space-around; font-size: 11px; }
+                .sig-box { border-top: 1px solid #000; width: 220px; text-align: center; padding-top: 5px; margin-top: 40px; }
+                
+                @media print {
+                    @page { size: portrait; margin: 1.5cm; }
+                    body { padding: 0; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="logo">${logoHtml}</div>
+                <div class="school-info">
+                    <div class="school-name">${schoolSettings.schoolName || 'Instituição de Ensino'}</div>
+                    <div style="font-size: 10px;">Ano Lectivo: ${academicYear}</div>
+                </div>
+            </div>
+
+            <div class="doc-title">Boletim de Aproveitamento Escolar</div>
+            
+            <div class="student-info">
+                <div><strong>Aluno:</strong> ${student.name}</div>
+                <div><strong>Código:</strong> ${student.id}</div>
+                <div><strong>Classe:</strong> ${student.desiredClass}</div>
+                <div><strong>Turma:</strong> ${student.turmaName || 'N/A'}</div>
+                <div><strong>Encarregado:</strong> ${student.guardianName}</div>
+                <div><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}</div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">Disciplinas</th>
+                        <th>1º Trimestre</th>
+                        <th>2º Trimestre</th>
+                        <th>3º Trimestre</th>
+                        <th style="background: #e0e0e0;">Média Anual</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+
+            <div style="margin-top: 30px; font-size: 11px; background: #f5f5f5; padding: 10px; border-radius: 4px;">
+                <strong>Observações:</strong> ${student.failedByAbsences ? '<span style="color: red;">Reprovado por Faltas.</span>' : 'Aproveitamento regular.'}
+            </div>
+
+            <div class="footer">
+                <div class="sig-box">O Director de Turma</div>
+                <div class="sig-box">A Direcção Pedagógica</div>
+            </div>
+
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+    `;
+
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(documentHtml);
+        win.document.close();
+    }
+};
+
+export const printEnrollmentCertificate = (
+    student: Student,
+    academicYear: number,
+    schoolSettings: SchoolSettings
+) => {
+    const logoHtml = schoolSettings.schoolLogo 
+        ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 100px; max-width: 100px;" />` 
+        : '<div style="width: 100px; height: 100px; background: #eee; border-radius: 50%;"></div>';
+
+    const documentHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Declaração de Matrícula - ${student.name}</title>
+            <style>
+                body { font-family: 'Times New Roman', Times, serif; padding: 50px; line-height: 1.6; color: #000; font-size: 14pt; }
+                .header { text-align: center; margin-bottom: 50px; }
+                .school-name { font-size: 22pt; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; }
+                .school-detail { font-size: 10pt; margin: 2px 0; }
+                
+                .doc-title { text-align: center; font-size: 18pt; font-weight: bold; text-transform: uppercase; margin: 60px 0; text-decoration: underline; }
+                
+                .content { text-align: justify; margin-bottom: 60px; text-indent: 50px; }
+                
+                .date-place { text-align: right; margin-bottom: 80px; }
+                
+                .signature { text-align: center; }
+                .sig-line { border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; }
+                
+                @media print {
+                    @page { size: portrait; margin: 2.5cm; }
+                    body { padding: 0; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                ${logoHtml}
+                <div class="school-name">${schoolSettings.schoolName || 'Instituição de Ensino'}</div>
+                <div class="school-detail">${schoolSettings.address || ''}</div>
+                <div class="school-detail">Contatos: ${schoolSettings.contact || ''} | Email: ${schoolSettings.email || ''}</div>
+                <div class="school-detail"><strong>NUIT: ${schoolSettings.nuit || ''}</strong></div>
+            </div>
+
+            <div class="doc-title">Declaração de Matrícula</div>
+            
+            <div class="content">
+                Para os devidos efeitos, declara-se que <strong>${student.name}</strong>, 
+                filho(a) de ${student.fatherName || 'N/A'} e de ${student.motherName || 'N/A'}, 
+                natural de ${student.placeOfBirth || 'N/A'}, nascido(a) aos ${new Date(student.birthDate).toLocaleDateString('pt-BR')}, 
+                portador(a) do documento de identificação ${student.idDocumentType || 'BI'} nº ${student.idDocumentNumber || 'N/A'}, 
+                encontra-se regularmente matriculado(a) nesta instituição de ensino, frequentando a 
+                <strong>${student.desiredClass}</strong>, no Ano Lectivo de <strong>${academicYear}</strong>.
+            </div>
+
+            <div class="content">
+                Por ser verdade e ter sido solicitado, mandou-se passar a presente declaração que vai por nós assinada e autenticada com o carimbo a óleo em uso nesta instituição.
+            </div>
+
+            <div class="date-place">
+                ${schoolSettings.address?.split(',')[0] || 'Cidade'}, ${new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </div>
+
+            <div class="signature">
+                <div class="sig-line">A Direcção da Escola</div>
+            </div>
+
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+    `;
+
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(documentHtml);
+        win.document.close();
+    }
+};
+
+export const printStudentEnrollmentForm = (
+    student: Student,
+    schoolSettings: SchoolSettings
+) => {
+    const logoHtml = schoolSettings.schoolLogo 
+        ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 70px; max-width: 70px;" />` 
+        : '<div style="width: 70px; height: 70px; background: #eee; border-radius: 50%;"></div>';
+
+    const documentHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Ficha de Matrícula - ${student.name}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; color: #333; font-size: 11px; }
+                .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+                .school-name { font-size: 16px; font-weight: bold; text-transform: uppercase; }
+                .doc-title { text-align: center; font-size: 14px; font-weight: bold; text-transform: uppercase; margin-bottom: 20px; }
+                
+                .section { border: 1px solid #ccc; padding: 10px; margin-bottom: 15px; border-radius: 4px; }
+                .section-title { font-weight: bold; text-transform: uppercase; background: #eee; padding: 5px; margin: -10px -10px 10px -10px; border-bottom: 1px solid #ccc; font-size: 10px; }
+                
+                .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+                .field { margin-bottom: 5px; }
+                .label { font-weight: bold; color: #666; font-size: 9px; text-transform: uppercase; }
+                .value { font-size: 11px; border-bottom: 1px dotted #ccc; display: block; padding: 2px 0; }
+                
+                .photo-placeholder { width: 100px; height: 120px; border: 1px dashed #999; display: flex; align-items: center; text-align: center; font-size: 9px; color: #999; }
+                
+                @media print {
+                    @page { size: portrait; margin: 1.5cm; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="logo">${logoHtml}</div>
+                <div style="text-align: right;">
+                    <div class="school-name">${schoolSettings.schoolName || 'Escola'}</div>
+                    <div style="font-size: 9px;">Matrícula Nº: ${student.id}</div>
+                </div>
+            </div>
+
+            <div class="doc-title">Ficha de Matrícula / Renovação</div>
+
+            <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                <div style="flex: 1; margin-right: 20px;">
+                    <div class="section">
+                        <div class="section-title">Dados do Aluno</div>
+                        <div class="field"><span class="label">Nome Completo:</span> <span class="value">${student.name}</span></div>
+                        <div class="grid">
+                            <div class="field"><span class="label">Data de Nascimento:</span> <span class="value">${new Date(student.birthDate).toLocaleDateString('pt-BR')}</span></div>
+                            <div class="field"><span class="label">Género:</span> <span class="value">${student.gender === 'M' ? 'Masculino' : 'Feminino'}</span></div>
+                            <div class="field"><span class="label">Naturalidade:</span> <span class="value">${student.placeOfBirth || 'N/A'}</span></div>
+                            <div class="field"><span class="label">Nacionalidade:</span> <span class="value">${student.nationality || 'Moçambicana'}</span></div>
+                        </div>
+                        <div class="grid">
+                            <div class="field"><span class="label">Documento:</span> <span class="value">${student.idDocumentType || 'BI'}</span></div>
+                            <div class="field"><span class="label">Número:</span> <span class="value">${student.idDocumentNumber || 'N/A'}</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="photo-placeholder">Colar Foto 3x4</div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Filiação</div>
+                <div class="field"><span class="label">Nome do Pai:</span> <span class="value">${student.fatherName || 'N/A'}</span></div>
+                <div class="field"><span class="label">Nome da Mãe:</span> <span class="value">${student.motherName || 'N/A'}</span></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Dados Académicos</div>
+                <div class="grid">
+                    <div class="field"><span class="label">Classe:</span> <span class="value">${student.desiredClass}</span></div>
+                    <div class="field"><span class="label">Turno:</span> <span class="value">${student.shift || 'N/A'}</span></div>
+                    <div class="field"><span class="label">Escola Anterior:</span> <span class="value">${student.previousSchool || 'N/A'}</span></div>
+                    <div class="field"><span class="label">Data de Matrícula:</span> <span class="value">${new Date(student.matriculationDate).toLocaleDateString('pt-BR')}</span></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Dados do Encarregado</div>
+                <div class="field"><span class="label">Nome do Encarregado:</span> <span class="value">${student.guardianName}</span></div>
+                <div class="grid">
+                    <div class="field"><span class="label">Parentesco:</span> <span class="value">${student.guardianRelationship || 'N/A'}</span></div>
+                    <div class="field"><span class="label">Contacto:</span> <span class="value">${student.guardianContact}</span></div>
+                    <div class="field"><span class="label">Email:</span> <span class="value">${student.guardianEmail || 'N/A'}</span></div>
+                    <div class="field"><span class="label">Endereço:</span> <span class="value">${student.address || 'N/A'}</span></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 50px; display: flex; justify-content: space-around;">
+                <div style="text-align: center; border-top: 1px solid #000; width: 200px; padding-top: 5px;">Assinatura do Encarregado</div>
+                <div style="text-align: center; border-top: 1px solid #000; width: 200px; padding-top: 5px;">A Secretaria</div>
+            </div>
+
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+    `;
+
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(documentHtml);
+        win.document.close();
+    }
+};
+
+export const printDebtorsList = (
+    debtors: { student: Student, debt: number }[],
+    academicYear: number,
+    schoolSettings: SchoolSettings,
+    currency: string = 'MZN'
+) => {
+    const logoHtml = schoolSettings.schoolLogo 
+        ? `<img src="${schoolSettings.schoolLogo}" alt="Logo" style="max-height: 60px; max-width: 60px;" />` 
+        : '<div style="width: 60px; height: 60px; background: #eee; border-radius: 50%;"></div>';
+
+    const formatPrice = (price: number) => {
+        return price.toLocaleString('pt-MZ', { style: 'currency', currency: currency });
+    };
+
+    const totalDebt = debtors.reduce((acc, curr) => acc + curr.debt, 0);
+
+    const rowsHtml = debtors.map((d, index) => `
+        <tr>
+            <td style="text-align: center;">${index + 1}</td>
+            <td>${d.student.name}</td>
+            <td>${d.student.desiredClass}</td>
+            <td>${d.student.guardianContact}</td>
+            <td style="text-align: right; font-weight: bold; color: #c0392b;">${formatPrice(d.debt)}</td>
+        </tr>
+    `).join('');
+
+    const documentHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Lista de Devedores - ${academicYear}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; color: #333; font-size: 11px; }
+                .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+                .school-name { font-size: 16px; font-weight: bold; text-transform: uppercase; }
+                .doc-title { text-align: center; font-size: 14px; font-weight: bold; text-transform: uppercase; margin-bottom: 20px; color: #c0392b; }
+                
+                table { width: 100%; border-collapse: collapse; }
+                th, td { border: 1px solid #ccc; padding: 8px; }
+                th { background-color: #f5f5f5; font-weight: bold; text-transform: uppercase; font-size: 10px; }
+                
+                .total-box { margin-top: 20px; text-align: right; font-size: 14px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px; }
+                
+                @media print {
+                    @page { size: portrait; margin: 1.5cm; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="logo">${logoHtml}</div>
+                <div style="text-align: right;">
+                    <div class="school-name">${schoolSettings.schoolName || 'Escola'}</div>
+                    <div style="font-size: 9px;">Ano Lectivo: ${academicYear}</div>
+                </div>
+            </div>
+
+            <div class="doc-title">Relatório de Alunos com Propinas em Atraso</div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 30px;">Nº</th>
+                        <th>Nome do Aluno</th>
+                        <th>Classe</th>
+                        <th>Contacto Encarregado</th>
+                        <th style="text-align: right;">Dívida Estimada</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml || '<tr><td colspan="5" style="text-align:center;">Nenhum devedor encontrado.</td></tr>'}
+                </tbody>
+            </table>
+
+            <div class="total-box">
+                VALOR TOTAL EM DÍVIDA: ${formatPrice(totalDebt)}
+            </div>
+
+            <div style="margin-top: 40px; text-align: center; font-size: 10px; color: #666;">
+                Este relatório baseia-se nas mensalidades não pagas até ao mês corrente.
             </div>
 
             <script>window.onload = function() { window.print(); }</script>

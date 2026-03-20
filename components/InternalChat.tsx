@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { User, DiscussionTopic, DiscussionMessage, UserRole, AppNotification } from '../types';
+import { User, DiscussionTopic, DiscussionMessage, UserRole, AppNotification, Turma } from '../types';
 import { ChatBubbleLeftRightIcon, SendIcon, UserAddIcon, TrashIcon, CheckCircleIcon, SearchIcon, CloseIcon, FilterIcon, ReplyIcon } from './icons/IconComponents';
 
 interface InternalChatProps {
@@ -11,15 +11,20 @@ interface InternalChatProps {
     messages: DiscussionMessage[];
     onMessagesChange: (messages: DiscussionMessage[]) => void;
     onAddNotifications: (notifications: AppNotification[]) => void;
+    turmas?: Turma[];
 }
 
-const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics, onTopicsChange, messages, onMessagesChange, onAddNotifications }) => {
+const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics, onTopicsChange, messages, onMessagesChange, onAddNotifications, turmas = [] }) => {
     const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
     const [newMessage, setNewMessage] = useState('');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [newTopicTitle, setNewTopicTitle] = useState('');
+    const [newTopicTurmaId, setNewTopicTurmaId] = useState<string>('');
+    const [newTopicClassLevel, setNewTopicClassLevel] = useState<string>('');
     const [isParticipantsModalOpen, setIsParticipantsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [turmaFilter, setTurmaFilter] = useState<string>('All');
+    const [classFilter, setClassFilter] = useState<string>('All');
     const [replyingTo, setReplyingTo] = useState<DiscussionMessage | null>(null);
     
     // Modal specific states
@@ -40,6 +45,14 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
         
         if (searchTerm) {
             filtered = filtered.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase()));
+        }
+
+        if (turmaFilter !== 'All') {
+            filtered = filtered.filter(t => t.turmaId === turmaFilter);
+        }
+
+        if (classFilter !== 'All') {
+            filtered = filtered.filter(t => t.classLevel === classFilter);
         }
 
         // Sort by last message date or creation date
@@ -105,7 +118,9 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
             createdBy: currentUser.id,
             createdAt: new Date().toISOString(),
             participantIds: [currentUser.id], // Creator is always a participant
-            status: 'Open'
+            status: 'Open',
+            turmaId: newTopicTurmaId || undefined,
+            classLevel: newTopicClassLevel || undefined
         };
 
         onTopicsChange([newTopic, ...topics]);
@@ -293,15 +308,39 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
                             </button>
                         )}
                     </div>
-                    <div className="relative">
-                        <input 
-                            type="text" 
-                            placeholder="Buscar tema..." 
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
-                        />
-                        <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                    <div className="space-y-2">
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                placeholder="Buscar tema..." 
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
+                            />
+                            <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                        </div>
+                        <div className="flex gap-2">
+                            <select 
+                                value={classFilter}
+                                onChange={e => setClassFilter(e.target.value)}
+                                className="flex-1 border border-gray-300 rounded-lg text-[10px] font-bold py-1 px-2 focus:ring-1 focus:ring-indigo-500 bg-white"
+                            >
+                                <option value="All">Todas Classes</option>
+                                {Array.from(new Set(turmas.map(t => t.classLevel))).sort().map(cl => (
+                                    <option key={cl} value={cl}>{cl}</option>
+                                ))}
+                            </select>
+                            <select 
+                                value={turmaFilter}
+                                onChange={e => setTurmaFilter(e.target.value)}
+                                className="flex-1 border border-gray-300 rounded-lg text-[10px] font-bold py-1 px-2 focus:ring-1 focus:ring-indigo-500 bg-white"
+                            >
+                                <option value="All">Todas Turmas</option>
+                                {turmas.filter(t => classFilter === 'All' || t.classLevel === classFilter).map(t => (
+                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
                 
@@ -514,15 +553,47 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
                     <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
                         <h3 className="text-lg font-bold mb-4">Criar Novo Tema</h3>
                         <form onSubmit={handleCreateTopic}>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Título do Tema</label>
-                            <input 
-                                type="text" 
-                                className="w-full border p-2 rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500" 
-                                placeholder="Ex: Planeamento Festa Junina" 
-                                value={newTopicTitle}
-                                onChange={e => setNewTopicTitle(e.target.value)}
-                                autoFocus
-                            />
+                            <div className="space-y-4 mb-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Título do Tema</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500" 
+                                        placeholder="Ex: Planeamento Festa Junina" 
+                                        value={newTopicTitle}
+                                        onChange={e => setNewTopicTitle(e.target.value)}
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Classe (Opcional)</label>
+                                        <select 
+                                            value={newTopicClassLevel}
+                                            onChange={e => setNewTopicClassLevel(e.target.value)}
+                                            className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
+                                        >
+                                            <option value="">Nenhuma</option>
+                                            {Array.from(new Set(turmas.map(t => t.classLevel))).sort().map(cl => (
+                                                <option key={cl} value={cl}>{cl}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Turma (Opcional)</label>
+                                        <select 
+                                            value={newTopicTurmaId}
+                                            onChange={e => setNewTopicTurmaId(e.target.value)}
+                                            className="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
+                                        >
+                                            <option value="">Nenhuma</option>
+                                            {turmas.filter(t => !newTopicClassLevel || t.classLevel === newTopicClassLevel).map(t => (
+                                                <option key={t.id} value={t.id}>{t.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
                             <div className="flex justify-end gap-2">
                                 <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
                                 <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold">Criar</button>

@@ -113,8 +113,7 @@ const RegisterOccurrenceModal: React.FC<RegisterOccurrenceModalProps> = ({ isOpe
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Gravidade</label>
                                 <select 
                                     value={severity} 
-                                    // @ts-ignore
-                                    onChange={e => setSeverity(e.target.value)} 
+                                    onChange={e => setSeverity(e.target.value as any)} 
                                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
                                 >
                                     <option value="Leve">Leve</option>
