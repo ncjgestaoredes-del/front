@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { User, DiscussionTopic, DiscussionMessage, UserRole, AppNotification, Turma } from '../types';
+import { User, DiscussionTopic, DiscussionMessage, UserRole, AppNotification, Turma, Student } from '../types';
 import { ChatBubbleLeftRightIcon, SendIcon, UserAddIcon, TrashIcon, CheckCircleIcon, SearchIcon, CloseIcon, FilterIcon, ReplyIcon } from './icons/IconComponents';
 
 interface InternalChatProps {
@@ -12,9 +12,10 @@ interface InternalChatProps {
     onMessagesChange: (messages: DiscussionMessage[]) => void;
     onAddNotifications: (notifications: AppNotification[]) => void;
     turmas?: Turma[];
+    students?: Student[];
 }
 
-const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics, onTopicsChange, messages, onMessagesChange, onAddNotifications, turmas = [] }) => {
+const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics, onTopicsChange, messages, onMessagesChange, onAddNotifications, turmas = [], students = [] }) => {
     const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
     const [newMessage, setNewMessage] = useState('');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -30,6 +31,8 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
     // Modal specific states
     const [participantSearchTerm, setParticipantSearchTerm] = useState('');
     const [roleFilter, setRoleFilter] = useState<string>('All');
+    const [participantTurmaFilter, setParticipantTurmaFilter] = useState<string>('All');
+    const [participantClassFilter, setParticipantClassFilter] = useState<string>('All');
     
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -85,15 +88,64 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
         return groups;
     }, [activeMessages]);
 
+    // Map users to their turmas and class levels for filtering
+    const userTurmaMap = useMemo(() => {
+        const map: Record<string, { turmaIds: Set<string>, classLevels: Set<string> }> = {};
+        
+        users.forEach(u => {
+            map[u.id] = { turmaIds: new Set(), classLevels: new Set() };
+        });
+
+        turmas.forEach(t => {
+            // Teachers
+            t.teachers?.forEach(ta => {
+                if (map[ta.teacherId]) {
+                    map[ta.teacherId].turmaIds.add(t.id);
+                    map[ta.teacherId].classLevels.add(t.classLevel);
+                }
+            });
+            // @ts-expect-error legacy
+            if (t.teacherIds) {
+                // @ts-expect-error legacy
+                t.teacherIds.forEach((tId: string) => {
+                    if (map[tId]) {
+                        map[tId].turmaIds.add(t.id);
+                        map[tId].classLevels.add(t.classLevel);
+                    }
+                });
+            }
+
+            // Guardians (via Students)
+            t.studentIds.forEach(sId => {
+                const student = students.find(s => s.id === sId);
+                if (student) {
+                    // Find guardians linked to this student
+                    const guardian = users.find(u => u.name === student.guardianName && u.role === UserRole.ENCARREGADO);
+                    if (guardian && map[guardian.id]) {
+                        map[guardian.id].turmaIds.add(t.id);
+                        map[guardian.id].classLevels.add(t.classLevel);
+                    }
+                }
+            });
+        });
+
+        return map;
+    }, [users, turmas, students]);
+
     // Filtered users for the modal
     const filteredModalUsers = useMemo(() => {
         return users.filter(u => {
             const matchesSearch = u.name.toLowerCase().includes(participantSearchTerm.toLowerCase()) || 
                                   u.email.toLowerCase().includes(participantSearchTerm.toLowerCase());
             const matchesRole = roleFilter === 'All' || u.role === roleFilter;
-            return matchesSearch && matchesRole;
+            
+            const userTurmaInfo = userTurmaMap[u.id];
+            const matchesTurma = participantTurmaFilter === 'All' || (userTurmaInfo && userTurmaInfo.turmaIds.has(participantTurmaFilter));
+            const matchesClass = participantClassFilter === 'All' || (userTurmaInfo && userTurmaInfo.classLevels.has(participantClassFilter));
+
+            return matchesSearch && matchesRole && matchesTurma && matchesClass;
         }).sort((a, b) => a.name.localeCompare(b.name));
-    }, [users, participantSearchTerm, roleFilter]);
+    }, [users, participantSearchTerm, roleFilter, participantTurmaFilter, participantClassFilter, userTurmaMap]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -459,7 +511,13 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
                                             return (
                                                 <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group`}>
                                                     {!isMe && (
-                                                        <img src={sender?.avatarUrl} alt="" className="w-8 h-8 rounded-full mr-2 self-end mb-1 shadow-sm" />
+                                                        sender?.avatarUrl ? (
+                                                            <img src={sender.avatarUrl} alt="" className="w-8 h-8 rounded-full mr-2 self-end mb-1 shadow-sm object-cover" />
+                                                        ) : (
+                                                            <div className="w-8 h-8 rounded-full mr-2 self-end mb-1 shadow-sm bg-orange-100 flex items-center justify-center text-orange-700 font-bold text-xs border border-orange-200">
+                                                                {sender?.name.charAt(0).toUpperCase()}
+                                                            </div>
+                                                        )
                                                     )}
                                                     <div className={`max-w-[75%] md:max-w-[60%] rounded-lg px-4 py-2 shadow-sm relative transition-all ${isMe ? 'bg-[#dcf8c6] text-gray-800 rounded-tr-none' : 'bg-white text-gray-800 rounded-tl-none'}`}>
                                                         {/* Reply Trigger Button */}
@@ -615,28 +673,57 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
                         </div>
                         
                         <div className="p-4 border-b bg-white space-y-3">
-                            <div className="flex gap-2 flex-col sm:flex-row">
-                                <div className="relative flex-1">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                <div className="relative">
                                     <input 
                                         type="text" 
                                         placeholder="Filtrar por nome..." 
                                         value={participantSearchTerm}
                                         onChange={e => setParticipantSearchTerm(e.target.value)}
-                                        className="w-full border pl-9 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                        className="w-full border pl-9 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
                                     />
                                     <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
                                 </div>
-                                <div className="relative min-w-[180px]">
+                                <div className="relative">
                                     <select 
                                         value={roleFilter}
                                         onChange={e => setRoleFilter(e.target.value)}
-                                        className="w-full border p-2 pl-9 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white appearance-none cursor-pointer"
+                                        className="w-full border p-2 pl-9 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white appearance-none cursor-pointer text-sm"
                                     >
                                         <option value="All">Todas as Funções</option>
                                         <option value={UserRole.PROFESSOR}>Professores</option>
                                         <option value={UserRole.SECRETARIA}>Secretaria</option>
                                         <option value={UserRole.ADMIN}>Administração</option>
                                         <option value={UserRole.ENCARREGADO}>Encarregados</option>
+                                    </select>
+                                    <FilterIcon className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                                </div>
+                                <div className="relative">
+                                    <select 
+                                        value={participantClassFilter}
+                                        onChange={e => {
+                                            setParticipantClassFilter(e.target.value);
+                                            setParticipantTurmaFilter('All');
+                                        }}
+                                        className="w-full border p-2 pl-9 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white appearance-none cursor-pointer text-sm"
+                                    >
+                                        <option value="All">Todas Classes</option>
+                                        {Array.from(new Set(turmas.map(t => t.classLevel))).sort().map(cl => (
+                                            <option key={cl} value={cl}>{cl}</option>
+                                        ))}
+                                    </select>
+                                    <FilterIcon className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                                </div>
+                                <div className="relative">
+                                    <select 
+                                        value={participantTurmaFilter}
+                                        onChange={e => setParticipantTurmaFilter(e.target.value)}
+                                        className="w-full border p-2 pl-9 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white appearance-none cursor-pointer text-sm"
+                                    >
+                                        <option value="All">Todas Turmas</option>
+                                        {turmas.filter(t => participantClassFilter === 'All' || t.classLevel === participantClassFilter).map(t => (
+                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                        ))}
                                     </select>
                                     <FilterIcon className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
                                 </div>
@@ -658,7 +745,13 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
                                 {filteredModalUsers.length > 0 ? filteredModalUsers.map(u => (
                                     <div key={u.id} className="flex items-center justify-between p-3 hover:bg-gray-50 transition-colors">
                                         <div className="flex items-center">
-                                            <img src={u.avatarUrl} alt="" className="w-10 h-10 rounded-full mr-3 border border-gray-100" />
+                                            {u.avatarUrl ? (
+                                                <img src={u.avatarUrl} alt="" className="w-10 h-10 rounded-full mr-3 border border-gray-100 object-cover" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full mr-3 bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm border border-indigo-200">
+                                                    {u.name.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
                                             <div>
                                                 <p className="text-sm font-medium text-gray-800">{u.name}</p>
                                                 <div className="flex items-center gap-2">

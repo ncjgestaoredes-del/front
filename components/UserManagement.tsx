@@ -148,7 +148,13 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onUsersChange, c
                                 {users.map(user => (
                                     <tr key={user.id} className="hover:bg-gray-50">
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 flex items-center">
-                                            <img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full mr-3 border"/>
+                                            {user.avatarUrl ? (
+                                                <img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full mr-3 border object-cover"/>
+                                            ) : (
+                                                <div className="w-8 h-8 rounded-full mr-3 bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs border border-indigo-200">
+                                                    {user.name.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
                                             {user.name}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>

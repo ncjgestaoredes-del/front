@@ -28,7 +28,6 @@ const TeacherManagement: React.FC<TeacherManagementProps> = ({ users, onUsersCha
             ...teacherData,
             id: `user_${Date.now()}`,
             role: UserRole.PROFESSOR,
-            avatarUrl: `https://i.pravatar.cc/150?u=${teacherData.email}`,
         };
 
         onUsersChange([...users, newTeacher]);
@@ -103,7 +102,13 @@ const TeacherManagement: React.FC<TeacherManagementProps> = ({ users, onUsersCha
                             {teachers.map(user => (
                                 <tr key={user.id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 flex items-center">
-                                        <img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full mr-3"/>
+                                        {user.avatarUrl ? (
+                                            <img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full mr-3 object-cover border"/>
+                                        ) : (
+                                            <div className="w-8 h-8 rounded-full mr-3 bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs border border-indigo-200">
+                                                {user.name.charAt(0).toUpperCase()}
+                                            </div>
+                                        )}
                                         {user.name}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>

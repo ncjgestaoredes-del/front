@@ -658,7 +658,13 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                                             <tr key={idx} className="hover:bg-gray-50">
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="flex items-center">
-                                                        <img className="h-8 w-8 rounded-full object-cover mr-3 border" src={d.teacher.avatarUrl} alt="" />
+                                                        {d.teacher.avatarUrl ? (
+                                                            <img className="h-8 w-8 rounded-full object-cover mr-3 border" src={d.teacher.avatarUrl} alt="" />
+                                                        ) : (
+                                                            <div className="h-8 w-8 rounded-full mr-3 bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs border border-indigo-200">
+                                                                {d.teacher.name.charAt(0).toUpperCase()}
+                                                            </div>
+                                                        )}
                                                         <div>
                                                             <div className="text-sm font-bold text-gray-900">{d.teacher.name}</div>
                                                             <div className="text-[10px] text-gray-500">{d.teacher.category || 'Efetivo'}</div>

@@ -263,6 +263,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
                             onMessagesChange={onMessagesChange}
                             onAddNotifications={onAddNotifications}
                             turmas={turmas}
+                            students={students}
                         />
                     </main>
                 </div>
@@ -292,7 +293,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
         case 'painel':
             return <VacancyOverview turmas={turmas} schoolSettings={schoolSettings} students={students} academicYears={academicYears} />;
         case 'reuniao':
-            return <InternalChat currentUser={user} users={users} topics={topics} onTopicsChange={onTopicsChange} messages={messages} onMessagesChange={onMessagesChange} onAddNotifications={onAddNotifications} turmas={turmas} />;
+            return <InternalChat currentUser={user} users={users} topics={topics} onTopicsChange={onTopicsChange} messages={messages} onMessagesChange={onMessagesChange} onAddNotifications={onAddNotifications} turmas={turmas} students={students} />;
         case 'solicitacoes':
             return <RequestManagement currentUser={user} users={users} requests={requests} onRequestsChange={onRequestsChange} onAddNotifications={onAddNotifications} />;
         case 'transferencias':

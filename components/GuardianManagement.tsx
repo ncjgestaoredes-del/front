@@ -45,7 +45,6 @@ const GuardianManagement: React.FC<GuardianManagementProps> = ({ users, onUsersC
             ...newGuardianData,
             id: `user_${Date.now()}`,
             role: UserRole.ENCARREGADO,
-            avatarUrl: `https://i.pravatar.cc/150?u=${newGuardianData.email}`,
             password: newGuardianData.password || '123456' // Default password
         };
         onUsersChange([...users, newGuardian]);
@@ -162,7 +161,13 @@ const GuardianManagement: React.FC<GuardianManagementProps> = ({ users, onUsersC
                                             </button>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 flex items-center">
-                                            <img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full mr-3" />
+                                            {user.avatarUrl ? (
+                                                <img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full mr-3 object-cover border" />
+                                            ) : (
+                                                <div className="w-8 h-8 rounded-full mr-3 bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs border border-indigo-200">
+                                                    {user.name.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
                                             {user.name}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>

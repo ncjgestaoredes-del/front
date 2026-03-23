@@ -159,7 +159,6 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose, onAd
         ...newGuardianData,
         id: `user_${Date.now()}`,
         role: UserRole.ENCARREGADO,
-        avatarUrl: `https://i.pravatar.cc/150?u=${newGuardianData.email}`,
         password: newGuardianData.password || '123456'
     };
     onUsersChange([...users, newGuardian]);

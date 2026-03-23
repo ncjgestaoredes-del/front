@@ -127,7 +127,13 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, onUpdateProfile, title,
         {/* User Profile */}
         <div className="relative" ref={dropdownRef}>
           <button onClick={() => setDropdownOpen(!dropdownOpen)} className="flex items-center space-x-2 focus:outline-none p-1 rounded-lg hover:bg-gray-50">
-            <img className="h-8 w-8 md:h-10 md:w-10 rounded-full object-cover border border-indigo-100 shadow-sm" src={user.avatarUrl} alt={user.name} />
+            {user.avatarUrl ? (
+              <img className="h-8 w-8 md:h-10 md:w-10 rounded-full object-cover border border-indigo-100 shadow-sm" src={user.avatarUrl} alt={user.name} />
+            ) : (
+              <div className="h-8 w-8 md:h-10 md:w-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm border border-indigo-700 shadow-sm">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+            )}
             <div className="text-left hidden lg:block">
               <div className="font-bold text-sm text-gray-700 leading-tight">{user.name}</div>
               <div className="text-[10px] text-gray-400 uppercase font-black">{user.role}</div>
@@ -137,7 +143,13 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, onUpdateProfile, title,
           {dropdownOpen && (
             <div className="absolute right-0 mt-2 py-2 w-56 bg-white rounded-lg shadow-2xl z-20 border border-gray-100 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-3">
-                 <img className="h-10 w-10 rounded-full object-cover" src={user.avatarUrl} alt="" />
+                 {user.avatarUrl ? (
+                   <img className="h-10 w-10 rounded-full object-cover" src={user.avatarUrl} alt="" />
+                 ) : (
+                   <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm border border-indigo-200">
+                     {user.name.charAt(0).toUpperCase()}
+                   </div>
+                 )}
                  <div>
                     <p className="text-sm font-bold text-gray-800">{user.name}</p>
                     <p className="text-[10px] text-indigo-500 font-bold uppercase">{user.role}</p>
