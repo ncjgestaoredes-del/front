@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Student, AcademicYear, Turma, SchoolSettings, User, FinancialSettings, UserRole, ExpenseRecord } from '../types';
+import { calculateStudentFinancialSummary } from '../src/financialUtils';
 import { ChartBarIcon, CurrencyDollarIcon, UsersIcon, AcademicCapIcon, CheckCircleIcon, ExclamationTriangleIcon, BookOpenIcon, UserAddIcon, ClockIcon, TrendingDownIcon, GraduationCapIcon, PrinterIcon } from './icons/IconComponents';
 import { printStatisticalReport, printDebtorsList } from './ReceiptUtils';
 
@@ -337,15 +338,30 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
     const financialStats = useMemo(() => {
         let totalRevenue = 0;
         const revenueByCategory = { 'Propinas (Mensalidades)': 0, 'Inscrições/Matrículas': 0, 'Uniformes': 0, 'Material': 0, 'Outros': 0 };
+        const revenueByMonth: Record<number, number> = {};
+        const revenueByMethod: Record<string, number> = {};
+        
         const payingStudentsSet = new Set<string>();
         const uniformNames = new Set(financialSettings.uniforms.map(u => u.name));
         const bookTitles = new Set(financialSettings.books.map(b => b.title));
+        
         visibleStudents.forEach(s => {
             if (!s.payments) return;
             const yearPayments = s.payments.filter(p => p.academicYear === selectedYear);
             if (yearPayments.length > 0) payingStudentsSet.add(s.id);
+            
             yearPayments.forEach(p => {
-                const amount = Number(p.amount || 0); totalRevenue += amount;
+                const amount = Number(p.amount || 0); 
+                totalRevenue += amount;
+                
+                // Monthly trend
+                const month = new Date(p.date).getMonth() + 1;
+                revenueByMonth[month] = (revenueByMonth[month] || 0) + amount;
+                
+                // Method distribution
+                const method = p.method || 'Outros';
+                revenueByMethod[method] = (revenueByMethod[method] || 0) + amount;
+
                 if (p.items && p.items.length > 0) {
                     p.items.forEach(item => {
                         const name = item.item; const val = Number(item.value || 0);
@@ -367,38 +383,47 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
 
         let currentDebt = 0; 
         const debtors: { student: Student, debt: number }[] = [];
-        const currentMonth = new Date().getMonth() + 1;
-        const acYear = academicYears.find(y => y.year === selectedYear);
-        const startMonth = acYear ? (acYear.startMonth || 2) : 2; const endMonth = acYear ? (acYear.endMonth || 11) : 11;
+        
         visibleStudents.forEach(s => {
             if (s.status === 'Transferido') return;
-            const hasEnrolledCurrent = s.payments?.some(p => p.academicYear === selectedYear && (p.type === 'Matrícula' || p.type === 'Renovação'));
-            if (hasEnrolledCurrent) {
-                let monthlyFee = Number(financialSettings.monthlyFee);
-                if (s.desiredClass) { const specific = financialSettings.classSpecificFees?.find(c => c.classLevel === s.desiredClass); if (specific) monthlyFee = Number(specific.monthlyFee); }
-                const profile = s.financialProfile || { status: 'Normal' };
-                if (profile.status === 'Isento Total') monthlyFee = 0;
-                else if (profile.status === 'Desconto Parcial' && profile.affectedTypes?.includes('Mensalidade')) monthlyFee *= (1 - (profile.discountPercentage || 0) / 100);
-                const checkLimit = (selectedYear === new Date().getFullYear()) ? currentMonth : endMonth;
-                let studentDebt = 0;
-                for(let m = startMonth; m <= checkLimit; m++) {
-                     if (extractYear(s.matriculationDate) === selectedYear && m < (new Date(s.matriculationDate).getMonth() + 1)) continue;
-                     if (!s.payments?.some(p => p.academicYear === selectedYear && p.type === 'Mensalidade' && p.referenceMonth === m)) studentDebt += monthlyFee;
-                }
-                if (studentDebt > 0) {
-                    currentDebt += studentDebt;
-                    debtors.push({ student: s, debt: studentDebt });
-                }
+            
+            // Use the unified calculation utility
+            const summary = calculateStudentFinancialSummary(s, academicYears, financialSettings, selectedYear);
+            
+            // If balance is negative, it's a debt
+            if (summary.balance < 0) {
+                const debtAmount = Math.abs(summary.balance);
+                currentDebt += debtAmount;
+                debtors.push({ student: s, debt: debtAmount });
             }
         });
-        const totalExpenses = expenses.filter(e => {
-            return extractYear(e.date) === selectedYear;
-        }).reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+
+        const yearExpenses = expenses.filter(e => extractYear(e.date) === selectedYear);
+        const totalExpenses = yearExpenses.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+        
+        const expensesByCategory: Record<string, number> = {};
+        const expensesByMonth: Record<number, number> = {};
+        
+        yearExpenses.forEach(e => {
+            const amount = Number(e.amount || 0);
+            expensesByCategory[e.category] = (expensesByCategory[e.category] || 0) + amount;
+            const month = new Date(e.date).getMonth() + 1;
+            expensesByMonth[month] = (expensesByMonth[month] || 0) + amount;
+        });
 
         return {
-            revenue: { total: totalRevenue, byCategory: revenueByCategory },
-            expenses: { total: totalExpenses },
-            tuition: { arrears: currentDebt, debtors },
+            revenue: { 
+                total: totalRevenue, 
+                byCategory: revenueByCategory,
+                byMonth: revenueByMonth,
+                byMethod: revenueByMethod
+            },
+            expenses: { 
+                total: totalExpenses,
+                byCategory: expensesByCategory,
+                byMonth: expensesByMonth
+            },
+            tuition: { arrears: currentDebt, debtors: debtors.sort((a, b) => b.debt - a.debt) },
             health: { profit: totalRevenue - totalExpenses }
         };
     }, [visibleStudents, expenses, selectedYear, financialSettings, academicYears]);
@@ -676,26 +701,190 @@ const ReportsView: React.FC<ReportsViewProps> = ({ currentUser, students, academ
                         </div>
                     </div>
                 );
-            case 'financial':
+            case 'financial': {
                 if (currentUser.role !== UserRole.ADMIN) return null;
+                const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                const revenueTrend = months.map((m, i) => ({
+                    label: m,
+                    value: financialStats.revenue.byMonth[i + 1] || 0
+                }));
+                const expenseTrend = months.map((m, i) => ({
+                    label: m,
+                    value: financialStats.expenses.byMonth[i + 1] || 0
+                }));
+
                 return (
-                    <div className="space-y-6 animate-fade-in">
+                    <div className="space-y-6 animate-fade-in pb-10">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <StatCard title="Receita Total" value={formatCurrency(financialStats.revenue.total)} color="text-green-600" icon={<CurrencyDollarIcon className="w-5 h-5 text-green-600"/>} />
-                            <StatCard title="Dívida Estimada" value={formatCurrency(financialStats.tuition.arrears)} color="text-red-600" />
-                            <StatCard title="Lucro/Prejuízo" value={formatCurrency(financialStats.health.profit)} color={financialStats.health.profit >= 0 ? "text-blue-600" : "text-red-600"} />
-                            <div className="flex items-center justify-center">
-                                <button 
-                                    onClick={() => printDebtorsList(financialStats.tuition.debtors, selectedYear, schoolSettings, financialSettings.currency)}
-                                    className="bg-red-600 text-white font-bold py-3 px-6 rounded-xl hover:bg-red-700 transition-colors flex items-center shadow-lg w-full justify-center"
-                                >
-                                    <PrinterIcon className="w-5 h-5 mr-2" />
-                                    Lista de Devedores
-                                </button>
+                            <StatCard title="Despesas Totais" value={formatCurrency(financialStats.expenses.total)} color="text-orange-600" icon={<TrendingDownIcon className="w-5 h-5 text-orange-600"/>} />
+                            <StatCard title="Dívida Estimada" value={formatCurrency(financialStats.tuition.arrears)} color="text-red-600" icon={<ExclamationTriangleIcon className="w-5 h-5 text-red-600"/>} />
+                            <StatCard title="Lucro/Prejuízo" value={formatCurrency(financialStats.health.profit)} color={financialStats.health.profit >= 0 ? "text-blue-600" : "text-red-600"} icon={<ChartBarIcon className="w-5 h-5 text-blue-600"/>} />
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Revenue Breakdown */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+                                <h3 className="font-bold text-gray-800 mb-4 flex items-center">
+                                    <CurrencyDollarIcon className="w-5 h-5 mr-2 text-green-600" />
+                                    Receitas por Categoria
+                                </h3>
+                                <div className="space-y-3">
+                                    {Object.entries(financialStats.revenue.byCategory).map(([cat, val]) => (
+                                        <div key={cat} className="flex flex-col">
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="text-gray-600">{cat}</span>
+                                                <span className="font-bold text-gray-900">{formatCurrency(val as number)}</span>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-1.5">
+                                                <div 
+                                                    className="bg-green-500 h-1.5 rounded-full" 
+                                                    style={{ width: `${financialStats.revenue.total > 0 ? ((val as number) / financialStats.revenue.total) * 100 : 0}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Expense Breakdown */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+                                <h3 className="font-bold text-gray-800 mb-4 flex items-center">
+                                    <TrendingDownIcon className="w-5 h-5 mr-2 text-orange-600" />
+                                    Despesas por Categoria
+                                </h3>
+                                <div className="space-y-3">
+                                    {Object.entries(financialStats.expenses.byCategory).length > 0 ? (
+                                        Object.entries(financialStats.expenses.byCategory).map(([cat, val]) => (
+                                            <div key={cat} className="flex flex-col">
+                                                <div className="flex justify-between text-sm mb-1">
+                                                    <span className="text-gray-600">{cat}</span>
+                                                    <span className="font-bold text-gray-900">{formatCurrency(val as number)}</span>
+                                                </div>
+                                                <div className="w-full bg-gray-100 rounded-full h-1.5">
+                                                    <div 
+                                                        className="bg-orange-500 h-1.5 rounded-full" 
+                                                        style={{ width: `${financialStats.expenses.total > 0 ? ((val as number) / financialStats.expenses.total) * 100 : 0}%` }}
+                                                    ></div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-10 text-gray-400 text-sm italic">Nenhuma despesa registrada para este ano.</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Monthly Trends */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+                                <h3 className="font-bold text-gray-800 mb-4 flex items-center">
+                                    <ChartBarIcon className="w-5 h-5 mr-2 text-indigo-600" />
+                                    Tendência Mensal (Receitas)
+                                </h3>
+                                <BarChart data={revenueTrend} />
+                            </div>
+
+                            {/* Top Debtors */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border overflow-hidden">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-gray-800 flex items-center">
+                                        <ExclamationTriangleIcon className="w-5 h-5 mr-2 text-red-600" />
+                                        Maiores Devedores
+                                    </h3>
+                                    <button 
+                                        onClick={() => printDebtorsList(financialStats.tuition.debtors, selectedYear, schoolSettings, financialSettings.currency)}
+                                        className="text-xs font-bold text-red-600 hover:underline flex items-center"
+                                    >
+                                        <PrinterIcon className="w-3 h-3 mr-1" />
+                                        Ver Todos
+                                    </button>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-xs">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left text-gray-500 font-bold uppercase">Aluno</th>
+                                                <th className="px-3 py-2 text-right text-gray-500 font-bold uppercase">Dívida</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {financialStats.tuition.debtors.slice(0, 5).map((d, i) => (
+                                                <tr key={i} className="hover:bg-gray-50">
+                                                    <td className="px-3 py-2 font-medium text-gray-800">{d.student.name}</td>
+                                                    <td className="px-3 py-2 text-right font-bold text-red-600">{formatCurrency(d.debt)}</td>
+                                                </tr>
+                                            ))}
+                                            {financialStats.tuition.debtors.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={2} className="px-3 py-4 text-center text-gray-400 italic">Nenhum devedor encontrado.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Payment Methods */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border">
+                            <h3 className="font-bold text-gray-800 mb-4 flex items-center">
+                                <CheckCircleIcon className="w-5 h-5 mr-2 text-blue-600" />
+                                Distribuição por Método de Pagamento
+                            </h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                {Object.entries(financialStats.revenue.byMethod).map(([method, val]) => (
+                                    <div key={method} className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-center">
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase mb-1">{method}</div>
+                                        <div className="text-sm font-black text-gray-800">{formatCurrency(val as number)}</div>
+                                        <div className="text-[10px] text-gray-500 mt-1">
+                                            {financialStats.revenue.total > 0 ? (((val as number) / financialStats.revenue.total) * 100).toFixed(1) : 0}%
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Health Insights */}
+                        <div className="bg-indigo-900 p-6 rounded-2xl shadow-lg text-white">
+                            <h3 className="font-bold mb-4 flex items-center text-indigo-200">
+                                <ChartBarIcon className="w-5 h-5 mr-2" />
+                                Insights de Saúde Financeira
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="space-y-1">
+                                    <p className="text-xs text-indigo-300 uppercase font-bold">Taxa de Cobrança</p>
+                                    <div className="text-2xl font-black">
+                                        {financialStats.revenue.total + financialStats.tuition.arrears > 0 
+                                            ? ((financialStats.revenue.total / (financialStats.revenue.total + financialStats.tuition.arrears)) * 100).toFixed(1) 
+                                            : 0}%
+                                    </div>
+                                    <p className="text-[10px] text-indigo-400">Percentual de receita recebida vs. faturada.</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs text-indigo-300 uppercase font-bold">Margem Operacional</p>
+                                    <div className="text-2xl font-black">
+                                        {financialStats.revenue.total > 0 
+                                            ? ((financialStats.health.profit / financialStats.revenue.total) * 100).toFixed(1) 
+                                            : 0}%
+                                    </div>
+                                    <p className="text-[10px] text-indigo-400">Eficiência entre receitas e despesas.</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs text-indigo-300 uppercase font-bold">Rácio de Despesa</p>
+                                    <div className="text-2xl font-black">
+                                        {financialStats.revenue.total > 0 
+                                            ? ((financialStats.expenses.total / financialStats.revenue.total) * 100).toFixed(1) 
+                                            : 0}%
+                                    </div>
+                                    <p className="text-[10px] text-indigo-400">Quanto da receita é consumido por custos.</p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 );
+            }
         }
     };
 

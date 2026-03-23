@@ -65,7 +65,7 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
             
             return dateB - dateA;
         });
-    }, [topics, messages, currentUser, searchTerm]);
+    }, [topics, messages, currentUser, searchTerm, turmaFilter, classFilter]);
 
     const activeTopic = useMemo(() => topics.find(t => t.id === selectedTopicId), [topics, selectedTopicId]);
 

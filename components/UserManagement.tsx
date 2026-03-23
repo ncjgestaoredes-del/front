@@ -46,7 +46,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onUsersChange, c
             email,
             password,
             role,
-            avatarUrl: `https://i.pravatar.cc/150?u=${email}`,
         };
 
         onUsersChange([...users, newUser]);
