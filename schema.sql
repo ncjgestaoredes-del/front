@@ -178,6 +178,8 @@ CREATE TABLE IF NOT EXISTS discussion_topics (
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     participantIds JSON,
     status VARCHAR(50),
+    turmaId VARCHAR(50),
+    classLevel VARCHAR(50),
     INDEX (schoolId),
     CONSTRAINT fk_topic_school FOREIGN KEY (schoolId) REFERENCES schools(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

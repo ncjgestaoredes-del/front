@@ -155,10 +155,12 @@ const InternalChat: React.FC<InternalChatProps> = ({ currentUser, users, topics,
         scrollToBottom();
     }, [activeMessages, replyingTo]);
 
-    // Clear reply state when changing topics
-    useEffect(() => {
+    // Clear reply state when changing topics (Adjusting state during render)
+    const [prevSelectedTopicId, setPrevSelectedTopicId] = useState(selectedTopicId);
+    if (selectedTopicId !== prevSelectedTopicId) {
+        setPrevSelectedTopicId(selectedTopicId);
         setReplyingTo(null);
-    }, [selectedTopicId]);
+    }
 
     const handleCreateTopic = (e: React.FormEvent) => {
         e.preventDefault();

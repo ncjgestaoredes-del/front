@@ -1,5 +1,5 @@
 
-const API_BASE_URL = 'https://smartbd1-2.onrender.com/api';
+const API_BASE_URL = '/api';
 
 /**
  * apiService centraliza todas as chamadas HTTP do frontend.

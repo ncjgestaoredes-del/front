@@ -18,9 +18,11 @@ const RegisterOccurrenceModal: React.FC<RegisterOccurrenceModalProps> = ({ isOpe
     const [measureTaken, setMeasureTaken] = useState('');
     const [error, setError] = useState('');
 
-    useEffect(() => {
+    // Reset form when isOpen changes to true (Adjusting state during render)
+    const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+    if (isOpen !== prevIsOpen) {
+        setPrevIsOpen(isOpen);
         if (isOpen) {
-            // Reset form
             setType('Negativo');
             setDate(new Date().toISOString().split('T')[0]);
             setSeverity('Leve');
@@ -28,7 +30,7 @@ const RegisterOccurrenceModal: React.FC<RegisterOccurrenceModalProps> = ({ isOpe
             setMeasureTaken('');
             setError('');
         }
-    }, [isOpen]);
+    }
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();

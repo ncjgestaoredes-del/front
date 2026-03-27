@@ -45,10 +45,13 @@ const FinancialRecords: React.FC<FinancialRecordsProps> = ({ students, onStudent
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingPayment, setEditingPayment] = useState<PaymentRecord | null>(null);
 
-    useEffect(() => {
+    // Sync activeYear with academicYears (Adjusting state during render)
+    const [prevAcademicYears, setPrevAcademicYears] = useState(academicYears);
+    if (academicYears !== prevAcademicYears) {
+        setPrevAcademicYears(academicYears);
         const current = academicYears.find(y => y.status === 'Em Curso' || y.status === 'Planeado');
         if (current) setActiveYear(current.year);
-    }, [academicYears]);
+    }
 
     const enrolledStudents = useMemo(() => {
         if (!activeYear) return [];

@@ -38,13 +38,16 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
         UserRole.ENCARREGADO
     ];
 
-    useEffect(() => {
+    // Sync state with props when user changes (Adjusting state during render)
+    const [prevUser, setPrevUser] = useState(user);
+    if (user !== prevUser) {
+        setPrevUser(user);
         if (user) {
             setFormData({
                 name: user.name,
                 email: user.email,
-                role: user.role,
                 password: '', // Keep empty to indicate no change
+                role: user.role,
                 contact: user.contact || '',
                 address: user.address || '',
                 birthDate: user.birthDate || '',
@@ -55,7 +58,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
                 availability: user.availability || []
             });
         }
-    }, [user]);
+    }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;

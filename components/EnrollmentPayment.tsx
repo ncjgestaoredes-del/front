@@ -67,21 +67,28 @@ const EnrollmentPayment: React.FC<EnrollmentPaymentProps> = ({ students, onStude
         ) || false;
     }, [selectedStudent, selectedYear]);
 
-    // Sync paymentType with isReturningStudent
-    useEffect(() => {
+    // Sync paymentType with isReturningStudent (Adjusting state during render)
+    const [prevSelectedStudent, setPrevSelectedStudent] = useState(selectedStudent);
+    const [prevIsReturningStudent, setPrevIsReturningStudent] = useState(isReturningStudent);
+    
+    if (selectedStudent !== prevSelectedStudent || isReturningStudent !== prevIsReturningStudent) {
+        setPrevSelectedStudent(selectedStudent);
+        setPrevIsReturningStudent(isReturningStudent);
         if (selectedStudent) {
             setPaymentType(isReturningStudent ? 'renewal' : 'new');
         }
-    }, [selectedStudent, isReturningStudent]);
+    }
 
-    // Clear selected student if they are no longer eligible (e.g. changing year)
-    useEffect(() => {
+    // Clear selected student if they are no longer eligible (e.g. changing year) (Adjusting state during render)
+    const [prevEligibleStudents, setPrevEligibleStudents] = useState(eligibleStudents);
+    if (eligibleStudents !== prevEligibleStudents) {
+        setPrevEligibleStudents(eligibleStudents);
         if (selectedStudentId && !eligibleStudents.find(s => s.id === selectedStudentId)) {
             setSelectedStudentId('');
             setSelectedUniforms({});
             setSelectedBooks({});
         }
-    }, [eligibleStudents, selectedStudentId]);
+    }
     const pastDebts = useMemo(() => {
         if (!selectedStudent || !selectedYear) return null;
         const previousYears = academicYears

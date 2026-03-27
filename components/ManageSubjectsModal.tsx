@@ -15,7 +15,10 @@ const ManageSubjectsModal: React.FC<ManageSubjectsModalProps> = ({ isOpen, onClo
     const [hasExamByClass, setHasExamByClass] = useState<Record<string, boolean>>({});
     const [newSubjectInputs, setNewSubjectInputs] = useState<Record<string, string>>({});
 
-    useEffect(() => {
+    // Sync state with academicYear (Adjusting state during render)
+    const [prevAcademicYear, setPrevAcademicYear] = useState(academicYear);
+    if (academicYear !== prevAcademicYear) {
+        setPrevAcademicYear(academicYear);
         if (academicYear) {
             const initialSubjects: Record<string, Subject[]> = {};
             const initialHasExam: Record<string, boolean> = {};
@@ -32,7 +35,7 @@ const ManageSubjectsModal: React.FC<ManageSubjectsModalProps> = ({ isOpen, onClo
             setHasExamByClass(initialHasExam);
             setNewSubjectInputs(initialInputs);
         }
-    }, [academicYear]);
+    }
 
     if (!isOpen || !academicYear) return null;
     

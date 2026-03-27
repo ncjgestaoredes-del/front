@@ -12,10 +12,13 @@ const SchoolCapacitySettings: React.FC<SchoolCapacitySettingsProps> = ({ setting
     const [isSaved, setIsSaved] = useState(false);
     const [logoPreview, setLogoPreview] = useState<string | null>(settings.schoolLogo || null);
 
-    useEffect(() => {
+    // Sync state with settings (Adjusting state during render)
+    const [prevSettings, setPrevSettings] = useState(settings);
+    if (settings !== prevSettings) {
+        setPrevSettings(settings);
         setFormData(settings);
         setLogoPreview(settings.schoolLogo || null);
-    }, [settings]);
+    }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
