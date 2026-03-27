@@ -35,9 +35,9 @@ const App: React.FC = () => {
         try {
             const data = await apiService.get('/schools');
             setSchools(data);
-        } catch (err) {
-            console.error("Falha ao conectar com o backend MySQL.");
-            setDbError("Não foi possível conectar ao servidor central. Verifique sua conexão ou se o backend no Render está ativo.");
+        } catch (err: any) {
+            console.error("Falha ao conectar com o backend MySQL:", err);
+            setDbError(err.message || "Não foi possível conectar ao servidor central. Verifique sua conexão ou se as variáveis de ambiente estão configuradas.");
         } finally {
             setLoading(false);
         }
